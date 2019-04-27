@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstdlib>
+#include <cmath>
 #include <CGAL/Cartesian_d.h>
 #include <CGAL/constructions_d.h>
 
@@ -18,11 +19,11 @@ int main()
   double coords1[3] = {1,1,1};
   double coords2[3] = {10,10,1};
   double coords3[3] = {20, 5, 1};
-  Point a = Point(3, coords1, &coords1[3]);
+  Point a1 = Point(3, coords1, &coords1[3]);
   Point b = Point(3, coords2, &coords2[3]);
   Point c = Point(3, coords3, &coords3[3]);
   Point o = Point(3, origin, &origin[3]);
-  Point points[3] = {a,b,c};
+  Point points[3] = {a1,b,c};
   K::Hyperplane_d plane = K::Hyperplane_d(points, &points[3], o, CGAL::ON_NEGATIVE_SIDE);
 
   for(int i=0; i<3; i++){
@@ -41,21 +42,22 @@ int main()
     std::cout << orthogonal.cartesian(i) << " " << std::endl;
   }
 
+  // Finding closest point to an arbitrary point y
+  double ycoords[3] = {20, 30, 40};
+  Vector y = Vector(3, ycoords, &ycoords[3]);
 
-  // Point a = Point(1,1,1, 1);
-  // Point b = Point(10,10,1, 1);
-  // Point c = Point(20,5,1, 1);
-  // Point d = Point(20,20,10, 1);
-  // Point e = Point(10, 10, 5, 1);
-  // Point f = Point(4, 4, 20, 1);
-  // Point pts[4] = {a,b,c,d};
-  // std::cout << Squared_distance()(a,b) << std::endl;
-  // std::cout << Orientation()(pts, &pts[4]);
-  // //std::cout << K::Hyperplane_d(2,pts,&pts[2]); This is trying to get coefficients u dumbass
-  // K::Hyperplane_d plane = K::Hyperplane_d(pts, &pts[2], pts[3]); // hyperplane thru first few points 
-  // //std::cout << Squared_distance()(plane, pts[3]) << std::endl; Can't automatically get signed distance to hypeprlane. SIGH
-  // Vector orthogonal = plane.orthogonal_vector(); // Get normal vector to plane
-  // std::cout << orthogonal.cartesian(0) << std::endl;
-  // std::cout << orthogonal.cartesian(1) << std::endl;
-  // std::cout << orthogonal.cartesian(2) << std::endl;
+  // p is a point on the hyperplane, but we want it as a vector
+  Vector p = a1 - o;
+
+  // a is the normal vector
+  Vector a = orthogonal;
+
+  // d = p dot a
+  double d = p*a;
+  std::cout << d << std::endl;
+
+  // distance = y dot a - d / |a|
+  double squared_distance = pow(y*a - d,2.0) / a.squared_length();
+  std::cout << squared_distance << std::endl;
+
 }
