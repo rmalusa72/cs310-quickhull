@@ -13,7 +13,6 @@ typedef K::Squared_distance_d Squared_distance;
 typedef K::Orientation_d Orientation;
 
 double point_plane_sqdistance(Hyperplane plane, Point on_plane, Point y){
-        
     int dim = plane.dimension();
 
     double origin[dim];
