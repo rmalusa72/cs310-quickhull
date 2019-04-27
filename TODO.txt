@@ -36,3 +36,4 @@ What attributes should I store?
 
 DONE:
 Distance from d-D point to point
+Whether a point is above a d-D hyperplane
