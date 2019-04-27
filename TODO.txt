@@ -5,13 +5,9 @@ Output: Combinatorial map of dD polyhedron
 (Output conversion: what format does ex. geomview take?)
 
 Quickhull steps
-Find extreme, non-degenerate points and create simplex
-	- Iterate through points
-	- Check for degeneracies
-	- Turn d+1 points into simplex
-Maintain list of facets
-	- What kind of list?
-	- How to store facet - one dart from it? 
+Find d+1 non-coplanar points, ideally extreme
+Set up into simplex (make triangles between every trio of points, but how are they connected?)
+Store one dart from each facet in list, initialize empty list of points corresponding to for each facet
 Check if points are above facets
 	- Find d-1D directed hyperplane through facets
 	- Find signed distance from point to facet
@@ -22,7 +18,7 @@ Sort points into outside sets
 Pick a facet, get furthest point, find visible set
 	- Start with facet it is above
 	- Go to adjacent facets (need way to get adjacent facets)
-	- Keep track of which facets have been visited (this is a search)
+	- Keep track of which facets have been visited (this is a search) (what data structure to use for this? Or mark them?)
 	- Find boundary of visible region (ppt has example of how to do this) and get ridges on it
 Form facets connecting those ridges to furthest point
 	- Deal with possibility that coplanar facets are created :/ (again see ppt)
@@ -33,3 +29,10 @@ Sort points again
 
 Dealing with degenerate cases: Bad. A secondary stage
 
+Hyperplanes, construction of and distance to: contained in the dD geometric kernel of CGAL
+To use exact types or inexact types? 
+Combinatorial maps DOES have adjacency yay
+What attributes should I store? 
+
+DONE:
+Distance from d-D point to point
