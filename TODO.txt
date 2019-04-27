@@ -23,7 +23,7 @@ Pick a facet, get furthest point, find visible set
 Form facets connecting those ridges to furthest point
 	- Deal with possibility that coplanar facets are created :/ (again see ppt)
 	- Write function to do this joining
-	- Link facets to their neighbors
+	- Link facets to their neighbors (has to be done afterwards/separately in 4+D)
 Remove facets in visible set from list of facets, add their points to unsorted list
 Sort points again
 
