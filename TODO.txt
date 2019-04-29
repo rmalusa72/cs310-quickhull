@@ -7,25 +7,36 @@ Output: Combinatorial map of dD polyhedron
 Quickhull steps
 Find d+1 non-coplanar points, ideally extreme
 Set up into simplex (make triangles between every trio of points, but how are they connected?)
+	* store as combinatorial map
 Store one dart from each facet in list, initialize empty list of points corresponding to for each facet
+	* make facet class w/handle, normal vector?, and outside set 
+	* need ridge class also, unless we just use dart handles on ridges
 Check if points are above facets
 	- Find d-1D directed hyperplane through facets
 	- Find signed distance from point to facet
-	- Does CGAL provide these things?
 Sort points into outside sets
 	- List of outside sets corresponding to list of facets
 	- Save distance to not have to recalculate it to find furthest point? 
 Pick a facet, get furthest point, find visible set
 	- Start with facet it is above
-	- Go to adjacent facets (need way to get adjacent facets)
+	- Go to adjacent facets (have way to get adjacent facets w/cmaps)
 	- Keep track of which facets have been visited (this is a search) (what data structure to use for this? Or mark them?)
 	- Find boundary of visible region (ppt has example of how to do this) and get ridges on it
+		* store ridges as set of facets, without information about their connectivity
 Form facets connecting those ridges to furthest point
 	- Deal with possibility that coplanar facets are created :/ (again see ppt)
 	- Write function to do this joining
 	- Link facets to their neighbors (has to be done afterwards/separately in 4+D)
+		* can I make a function to link two facets *if they share coordinates*? 
+		* need to store coordinates as attributes of vertices
+		* have to make a point class anyway, might as well use that
 Remove facets in visible set from list of facets, add their points to unsorted list
 Sort points again
+
+FIRST: 3d general position
+SECOND: 4d general position
+THIRD: adapt for non-general position
+FOURTH: adapt for higher dimensions
 
 Dealing with degenerate cases: Bad. A secondary stage
 

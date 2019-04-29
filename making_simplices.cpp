@@ -48,19 +48,31 @@ Dart_handle make_simplex(int simplex_dimension, CMap cm){
         components.push_back(cm.make_combinatorial_tetrahedron());
         components.push_back(cm.make_combinatorial_tetrahedron());
 
+        // Ideally should not write in all simplices by hand! Will not work for higher dimensions. But for now this is what's working. 
         // for(int i=0; i<simplex_dimension+1; i++){
         //     components.push_back(make_simplex(simplex_dimension-1, cm));
         // }
         std::cout << "test1" << std::endl;
-        cm.sew<3>(components[0], components[1]);
+        cm.sew<3>(components[0], components[1]); //0, 1
         std::cout << "test2" << std::endl;
-        cm.sew<3>(cm.beta(components[0], 2), components[2]);
+        cm.sew<3>(cm.beta(components[0], 2), components[2]); //0,2
         std::cout << "test3" << std::endl;
-        cm.sew<3>(cm.beta(cm.beta(components[0], 1), 2), components[3]);
+        cm.sew<3>(cm.beta(cm.beta(components[0], 1), 2), components[3]); //0,3
         std::cout << "test4" << std::endl;
-        cm.sew<3>(cm.beta(cm.beta(components[0], 0), 2), components[4]);
+        cm.sew<3>(cm.beta(cm.beta(components[0], 0), 2), components[4]); //0,4
         std::cout << "test5" << std::endl;
-
+        cm.sew<3>(cm.beta(components[2], 2), cm.beta(components[1], 2)); //2,1
+        std::cout << "test6" << std::endl;
+        cm.sew<3>(cm.beta(cm.beta(components[2], 0), 2), cm.beta(cm.beta(components[4], 1), 2)); //2,4
+        std::cout << "test7" << std::endl;
+        cm.sew<3>(cm.beta(cm.beta(components[2], 1), 2), cm.beta(cm.beta(components[3], 0), 2)); //2,3
+        std::cout << "test8" << std::endl;
+        cm.sew<3>(cm.beta(cm.beta(components[1], 0), 2), cm.beta(components[3], 2)); //1,3
+        std::cout << "test9" << std::endl;
+        cm.sew<3>(cm.beta(cm.beta(components[1], 1), 2), cm.beta(components[4], 2)); //1,4
+        std::cout << "test10" << std::endl;
+        cm.sew<3>(cm.beta(cm.beta(components[3], 1), 2), cm.beta(cm.beta(components[4], 0), 2)); //3, 4
+        std::cout << "test10" << std::endl;
         CGAL_assertion(cm.is_valid());
         
     }
