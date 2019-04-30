@@ -28,6 +28,7 @@ Form facets connecting those ridges to furthest point
 	- Write function to do this joining
 	- Link facets to their neighbors (has to be done afterwards/separately in 4+D)
 		* can I make a function to link two facets *if they share coordinates*? 
+			* oh! this function could make constructing initial simplex/higher dimensions generally easier
 		* need to store coordinates as attributes of vertices
 		* have to make a point class anyway, might as well use that
 Remove facets in visible set from list of facets, add their points to unsorted list
