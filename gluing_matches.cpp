@@ -84,8 +84,15 @@ void sew_on_match(Dart_handle dh1, Dart_handle dh2){
         std::cout << "dart1:" <<cm.info<0>(dart1) << " " << cm.info<0>(cm.beta(dart1, 1)) << std::endl;
         std::cout << "dart2:" <<cm.info<0>(dart2) << " " << cm.info<0>(cm.beta(dart2, 1)) << std::endl;
 
-        // I have the darts but actually sewing them is not working; fml 
-        cm.sew<dim-1>(dart1, dart2);
+        if(dim==3){
+          std::cout << "What the fuck" << std::endl;
+          cm.link_beta<2>(dart1, dart2);
+          std::cout << "What the fuck" << std::endl;
+        } else {
+          std::cout << "What the fuck2" << std::endl;
+          cm.sew<dim-1>(dart1, dart2);
+        }
+        std::cout << "what even" << std::endl;
         return;
       }    
     }
@@ -125,22 +132,8 @@ int main(){
   cm.info<0>(cm.beta(dh2,1))=points[4];
   cm.info<0>(cm.beta(dh2,0))=points[5];
 
-  for(CMap::One_dart_per_incident_cell_range<0, 1>::iterator it3 = cm.one_dart_per_incident_cell<0, 1>(dh1).begin(), itend3 = cm.one_dart_per_incident_cell<0, 1>(dh1).end(); it3!=itend3; ++it3){
-    std::cout << cm.info<0>(it3) << std::endl;
-  }
-
-
-  // for(int i=0; i<3; i++){
-  //   std::cout<<cm.info<0>(dh1)<<std::endl;
-  //   dh1 = cm.beta(dh1, 1);
-  // }
-
-  // for(int i=0; i<3; i++){
-  //   std::cout<<cm.info<0>(dh2)<<std::endl;
-  //   dh2 = cm.beta(dh2, 1);
-  // }
-
   sew_on_match(dh1, dh2);
+  std::cout << "is happening" << std::endl;
 }
 
 
