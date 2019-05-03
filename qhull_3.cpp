@@ -135,6 +135,29 @@ void quickhull(p_vector points){
   }
 
   // Iterate thru face list until it is empty
+  while(facet_list.size() != 0){
+    curr_facet = facet_list.pop_front();
+    if (curr_facet.outside_set.size() != 0){
+      // Find furthest point
+      Point max_p = curr_facet.outside_set[0]; 
+      double max_distance = Squared_distance()(max_p, curr_facet.plane);
+      for(int i=1; i<curr_facet.outside_set.size(); i++){
+        // For 4d will have to use my squared_distance and not the built-in one
+        double curr_distance = Squared_distance()(curr_facet.outside_set[i], curr_facet.plane);
+        if(curr_distance > max_distance){
+          max_distance = curr_distance;
+          max_p = curr_facet.outside_set[i];
+        }
+      }
+
+      
+      // Find visible set
+      // Find boundary
+      // Join new point to boundary with facets
+      // Glue together facets 
+      // Delete visible set (when you delete a dart, make sure not to try to process that face later)
+    }
+  }
 }
 
 // Given a list of d-dimensional points,
