@@ -1,5 +1,6 @@
 #include <CGAL/Linear_cell_complex_for_combinatorial_map.h>
 #include <CGAL/Linear_cell_complex_operations.h>
+#include <CGAL/enum.h>
 #include <iostream>
 #include <cstdlib>
 #include <cmath>
@@ -90,10 +91,16 @@ void quickhull(p_vector points){
     facet f;
     f.handle = it; 
     f.vertices = get_cell_vertices(it);
-    p_vector p; 
-    f.outside_set = p; 
-    // Need to make sure this is the outward-facing plane :|
+    // Need to make sure this is the outward-facing plane - that the other hull point is outside it 
+    // In dD can provide a point on other side, but in 3D have to do it ourselves by grabbing the point at the vertex of the simplex
+    // that isn't in this face
     f.plane = Plane(f.vertices[0], f.vertices[1], f.vertices[2]);
+    Point other = lcc.point(lcc.beta(lcc.beta(it, 2), 0));
+    if(f.plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
+        std::cout << "switching plane"; 
+        f.plane = f.plane.opposite(); // Remember to free this later
+    }
+
     facets.push_back(f);
   }
 
@@ -102,14 +109,29 @@ void quickhull(p_vector points){
   for(int i=0; i<points.size(); i++){
     Point curr_point = points[i];
     if(std::find(extremes.begin(), extremes.end(), curr_point) == extremes.end()){
+        std::cout << "curr point: " << curr_point << std::endl;
         for(facet_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
-            facet curr = *it;
-            if(orientation(curr.vertices[0], curr.vertices[1], curr.vertices[2], curr_point) == CGAL::POSITIVE){
-                curr.outside_set.push_back(curr_point);
-                continue; 
-            }
+            if((*it).plane.oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
+                std::cout << "point on pos side according to plane" << std::endl;
+                std::cout << i << std::endl; 
+                (*it).outside_set.push_back(curr_point);
+                std::cout << "outside size: " << (*it).outside_set.size();
+                break;
+            }          
         }   
     }
+  }
+
+  for(facet_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
+    std::cout << "vertices: ";
+    for(int i=0; i < (*it).vertices.size(); i++){
+        std::cout << (*it).vertices[i] << "/"; 
+    }
+    std::cout << std::endl << "outside set: ";
+    for(int i = 0; i < (*it).outside_set.size(); i++){
+        std::cout << (*it).outside_set[i] << "/";
+    }
+    std::cout << std::endl; 
   }
 
   // Iterate thru face list until it is empty
