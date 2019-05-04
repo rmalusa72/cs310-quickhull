@@ -38,7 +38,7 @@ struct Lcc_attributes_normal
   struct Dart_wrapper
   {
     typedef CGAL::Cell_attribute_with_point<Refs, void> Point_attribute;
-    typedef CGAL::Cell_attribute<Refs, Vector> Facet_attribute;
+    typedef CGAL::Cell_attribute<Refs, Plane> Facet_attribute;
     typedef CGAL::cpp11::tuple<Point_attribute, void, Facet_attribute, void> Attributes;
   };
 };
@@ -63,6 +63,7 @@ typedef std::list<facet> facet_list;
 void quickhull(p_vector points);
 p_vector find_initial_points(p_vector points);
 p_vector get_cell_vertices(Dart_handle d);
+p_vector get_ridge_vertices(Dart_handle d);
 
 int main(){
   // Load points into a list
@@ -97,6 +98,15 @@ void quickhull(p_vector points){
   }
   lcc.make_tetrahedron(extremes[0], extremes[1], extremes[2], extremes[3]);
 
+  // Create & associate 2-attributes to all darts
+  for (LCC::Dart_range::iterator
+       it=lcc.darts().begin(), itend=lcc.darts().end();
+       it!=itend; ++it)
+  {
+    if ( lcc.attribute<dim-1>(it)==NULL )
+      lcc.set_attribute<dim-1>(it, lcc.create_attribute<dim-1>());
+  }
+
   // Store darts from each face in list of facets
   facet_list facets; 
   for(LCC::One_dart_per_cell_range<2>::iterator it = lcc.one_dart_per_cell<2>().begin(), itend = lcc.one_dart_per_cell<2>().end(); it != itend; ++it){
@@ -113,6 +123,8 @@ void quickhull(p_vector points){
         f.plane = f.plane.opposite(); // Remember to free this later
     }
     facets.push_back(f);
+    // Associate facet plane to this facet
+    lcc.info<dim-1>(it) = f.plane;
   }
 
   // Sort other points into outside sets
@@ -167,33 +179,86 @@ void quickhull(p_vector points){
       dart_list visible; 
       dart_list to_visit;
       dart_list boundary; 
-      // TODO: associate normals to facets so we don't have to recalculate plane
+      dart_list new_facets;
       to_visit.push_back(curr_facet.handle);
+      visible.push_back(curr_facet.handle);
+
       LCC::size_type m = lcc.get_new_mark(); 
       while(to_visit.size() != 0){
         // Pop next dart 
         Dart_handle curr = to_visit.front();
         to_visit.pop_front();
-        if(!lcc.is_marked(curr, m)){
-          // Add to visible set if visible
-          p_vector vertices = get_cell_vertices(curr);
 
-
-          // Mark darts of this facet; add darts of adjacent facets to to_visit
-          for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(curr).begin(), itend = lcc.darts_of_cell<dim-1>(curr).end(); it != itend; ++it){
-            lcc.mark(it, m);
-            Dart_handle cross = lcc.beta(curr, dim-1);
-            to_visit.push_back(cross);
+        // Mark darts of this cell visited
+        // & Grab adjacent darts
+        for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(curr).begin(), itend = lcc.darts_of_cell<dim-1>(curr).end(); it != itend; ++it){
+          lcc.mark(it, m);
+          
+          // Dart in adjacent cell to current dart
+          Dart_handle cross = lcc.beta(curr, dim-1);
+          // If dart is marked - ignore
+          // If dart plane is visible - add to to_visit
+          // If dart plane is not visible - add this ridge to boundary
+          if (!(lcc.is_marked(cross, m))){
+            if(lcc.info<dim-1>(cross).oriented_side(max_p) == CGAL::ON_POSITIVE_SIDE){
+              to_visit.push_back(cross);
+              visible.push_back(cross);
+            } else {
+              boundary.push_back(cross);
+            } // TODO: Account for coplanar case
           }
+        }        
+      }
+      // Now boundary should contain one dart from each ridge on boundary, and visible should contain one dart from each visible facet
+      //Free mark
+      lcc.free_mark(m);
+
+      // Join new point to boundary with new facets
+      while (boundary.size() != 0){
+        Dart_handle curr = boundary.front();
+        boundary.pop_front(); 
+        // build new simplex with vertices = points of curr and max_p, making sure it is oriented so it can be linked
+        // Note: for shapes of higher dimension than triangles this may require more complex fiddling
+        p_vector ridge_points = get_ridge_vertices(curr);
+        for(int i=0; i<ridge_points.size(); i++){
+          std::cout << "ridge points " << i << ":" << ridge_points[i] << std::endl;
         }
+
+        Dart_handle new_facet = lcc.make_triangle(ridge_points[1], ridge_points[0], max_p);
+        std::cout << "new_facet: " << lcc.point(new_facet);
+        std::cout << "new_facet next: " << lcc.point(lcc.beta(new_facet, 1));
+        std::cout << "new_facet next next : " << lcc.point(lcc.beta(lcc.beta(new_facet, 1), 1));
+               
+        // Unlink from current (visible) facet and link to new facet along the boundary ridge
+        lcc.unsew<dim-1>(curr);
+        lcc.sew<dim-1>(curr, new_facet);
+
+        // Add to list of new facets for later linking
+        new_facets.push_back(new_facet);
+
+        // Find facet normal and add it to list, at some point
+        // use any other point on hull to determine which side is positive and which side is negative (? check that this point works)
+        facet f; 
+        f.handle = new_facet; 
+        f.vertices = get_cell_vertices(new_facet);
+        f.plane = Plane(f.vertices[0], f.vertices[1], f.vertices[2]);
+        Point other = lcc.point(lcc.beta(curr, 0));
+        if(f.plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
+          std::cout << "switching plane"; 
+          f.plane = f.plane.opposite(); // Remember to free this later
+        }
+        facets.push_back(f);
       }
 
-      // Find boundary
-      // Join new point to boundary with facets
-      // Glue together facets 
+      // Glue together new facets along matching edges
+
       // Delete visible set (when you delete a dart, make sure not to try to process that face later)
+      // Resort outside set of deleted facets
     }
   }
+
+  // Export finished hull as .OFF file 
+
 }
 
 // Given a list of d-dimensional points,
@@ -269,6 +334,21 @@ p_vector get_cell_vertices(Dart_handle handle){
         p.push_back(lcc.point(it));
     }   
     return p; 
+}
+
+p_vector get_ridge_vertices(Dart_handle handle){
+  p_vector p; 
+  if(dim == 3){
+    // Ridge is a single edge; manually grab both points
+    p.push_back(lcc.point(handle));
+    p.push_back(lcc.point(lcc.beta(handle, 1)));
+  } else if (dim > 3){
+    for(LCC::Dart_of_cell_range<dim-2>::iterator it = lcc.darts_of_cell<dim-2>(handle).begin(), itend = lcc.darts_of_cell<dim-2>(handle).end(); 
+        it != itend; ++it){
+        p.push_back(lcc.point(it));
+    }       
+  }
+  return p;
 }
 
 
