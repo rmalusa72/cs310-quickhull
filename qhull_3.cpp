@@ -16,7 +16,7 @@ const int dim = 3;
 typedef CGAL::Cartesian<double> K;
 typedef CGAL::Vector_3<K> Vector;
 typedef CGAL::Segment_3<K> Segment;
-typedef CGAL::Plane_3<K> Plane; 
+typedef CGAL::Plane_3<K> Plane;
 typedef K::Compute_squared_distance_3 Squared_distance;
 typedef K::Orientation_3 Orientation;
 typedef K::Coplanar_3 not_independent;
@@ -148,7 +148,8 @@ void quickhull(p_vector points){
   facet curr_facet; 
   // Iterate thru face list until it is empty
   while(facets.size() != 0){
-    curr_facet = facets.pop_front();
+    curr_facet = facets.front();
+    facets.pop_front();
     if (curr_facet.outside_set.size() != 0){
       // Find furthest point
       Point max_p = curr_facet.outside_set[0]; 
@@ -171,7 +172,8 @@ void quickhull(p_vector points){
       LCC::size_type m = lcc.get_new_mark(); 
       while(to_visit.size() != 0){
         // Pop next dart 
-        Dart_handle curr = to_visit.pop_front();
+        Dart_handle curr = to_visit.front();
+        to_visit.pop_front();
         if(!lcc.is_marked(curr, m)){
           // Add to visible set if visible
           p_vector vertices = get_cell_vertices(curr);
