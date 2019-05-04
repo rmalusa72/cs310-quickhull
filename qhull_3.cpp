@@ -20,10 +20,6 @@ typedef CGAL::Plane_3<K> Plane;
 typedef K::Compute_squared_distance_3 Squared_distance;
 typedef K::Orientation_3 Orientation;
 typedef K::Coplanar_3 not_independent;
-typedef CGAL::Linear_cell_complex_for_combinatorial_map<dim, dim, CGAL::Linear_cell_complex_traits<dim, K>> LCC;
-typedef LCC::Dart_handle                                 Dart_handle;
-typedef LCC::Point                                       Point;
-typedef std::vector<Point> p_vector;
 
 // typedef CGAL::Cartesian_d<double> K;
 // typedef CGAL::Vector_d<K> Vector;
@@ -36,6 +32,22 @@ typedef std::vector<Point> p_vector;
 // typedef LCC::Point                                       Point;
 // typedef std::vector<Point> vector;
 
+struct Lcc_attributes_normal
+{
+  template<class Refs>
+  struct Dart_wrapper
+  {
+    typedef CGAL::Cell_attribute_with_point<Refs, void> Point_attribute;
+    typedef CGAL::Cell_attribute<Refs, Vector> Facet_attribute;
+    typedef CGAL::cpp11::tuple<Point_attribute, void, Facet_attribute, void> Attributes;
+  };
+};
+
+typedef CGAL::Linear_cell_complex_for_combinatorial_map<dim, dim, CGAL::Linear_cell_complex_traits<dim, K>, Lcc_attributes_normal> LCC;
+typedef LCC::Dart_handle                                 Dart_handle;
+typedef LCC::Point                                       Point;
+typedef std::vector<Point> p_vector;
+typedef std::list<Dart_handle> dart_list;
 LCC lcc; 
 
 class facet{
@@ -100,7 +112,6 @@ void quickhull(p_vector points){
         std::cout << "switching plane"; 
         f.plane = f.plane.opposite(); // Remember to free this later
     }
-
     facets.push_back(f);
   }
 
@@ -134,9 +145,10 @@ void quickhull(p_vector points){
     std::cout << std::endl; 
   }
 
+  facet curr_facet; 
   // Iterate thru face list until it is empty
-  while(facet_list.size() != 0){
-    curr_facet = facet_list.pop_front();
+  while(facets.size() != 0){
+    curr_facet = facets.pop_front();
     if (curr_facet.outside_set.size() != 0){
       // Find furthest point
       Point max_p = curr_facet.outside_set[0]; 
@@ -149,9 +161,31 @@ void quickhull(p_vector points){
           max_p = curr_facet.outside_set[i];
         }
       }
-
       
       // Find visible set
+      dart_list visible; 
+      dart_list to_visit;
+      dart_list boundary; 
+      // TODO: associate normals to facets so we don't have to recalculate plane
+      to_visit.push_back(curr_facet.handle);
+      LCC::size_type m = lcc.get_new_mark(); 
+      while(to_visit.size() != 0){
+        // Pop next dart 
+        Dart_handle curr = to_visit.pop_front();
+        if(!lcc.is_marked(curr, m)){
+          // Add to visible set if visible
+          p_vector vertices = get_cell_vertices(curr);
+
+
+          // Mark darts of this facet; add darts of adjacent facets to to_visit
+          for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(curr).begin(), itend = lcc.darts_of_cell<dim-1>(curr).end(); it != itend; ++it){
+            lcc.mark(it, m);
+            Dart_handle cross = lcc.beta(curr, dim-1);
+            to_visit.push_back(cross);
+          }
+        }
+      }
+
       // Find boundary
       // Join new point to boundary with facets
       // Glue together facets 
