@@ -64,6 +64,7 @@ void quickhull(p_vector points);
 p_vector find_initial_points(p_vector points);
 p_vector get_cell_vertices(Dart_handle d);
 p_vector get_ridge_vertices(Dart_handle d);
+Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2);
 
 int main(){
   // Load points into a list
@@ -89,19 +90,12 @@ int main(){
 // Given a set of d-dimensional points, constructs their convex hull in lcc
 void quickhull(p_vector points){
 
-/*  // Find initial (independent, ideally extreme) points
+  // Find initial (independent, ideally extreme) points
   p_vector extremes = find_initial_points(points);
   // Construct simplex
   for(int i=0; i<extremes.size(); i++){
     std::cout << extremes[i] << std::endl;
-  }*/
-
-  // Manually selecting extreme points for debugging
-  p_vector extremes;
-  extremes.push_back(points[0]);
-  extremes.push_back(points[1]);
-  extremes.push_back(points[2]);
-  extremes.push_back(points[3]);
+  }
 
   for(int i=0; i<extremes.size(); i++){
     std::cout << extremes[i] << std::endl;
@@ -272,23 +266,54 @@ void quickhull(p_vector points){
       }
 
       // Glue together new facets along matching edges
-      // This loop should iterate through pairs of facets 
+      // This loop iterates through pairs of facets 
       for(dart_list::iterator it = new_facets.begin(), itend = new_facets.end(); it!=itend; ++it){
         dart_list::iterator it2 = it; 
         it2++; 
         for(dart_list::iterator itend2 = new_facets.end(); it2!=itend2; ++it2){
+          bool match_found = false;
+          Dart_handle match1;
+          Dart_handle match2;
           std::cout << "PAIR: " << std::endl; 
           std::cout << "it1 1: " << lcc.point(*it) << std::endl;
           std::cout << "it1 2: " << lcc.point(lcc.beta(*it, 1)) << std::endl; 
           std::cout << "it2 1: " << lcc.point(*it2) << std::endl;
-          std::cout << "it2 2: " << lcc.point(lcc.beta(*it2, 1)) << std::endl;     
+          std::cout << "it2 2: " << lcc.point(lcc.beta(*it2, 1)) << std::endl;
+
+          // Now, for each pair of facets, iterate through each pair of ridges!!!!
+          for(LCC::One_dart_per_incident_cell_range<dim-2,dim-1>::iterator r = lcc.one_dart_per_incident_cell<dim-2, dim-1>(*it).begin(), r_end = lcc.one_dart_per_incident_cell<dim-2,dim-1>(*it).end(); r!=r_end; ++r){
+            for(LCC::One_dart_per_incident_cell_range<dim-2,dim-1>::iterator r1 = lcc.one_dart_per_incident_cell<dim-2, dim-1>(*it2).begin(), r1_end = lcc.one_dart_per_incident_cell<dim-2,dim-1>(*it2).end(); r1!=r1_end; ++r1){
+              std::cout << "ridge 1:" << lcc.point(r) << "/" << lcc.point(lcc.beta(r, 1)) << std::endl;
+              std::cout << "ridge 2:" << lcc.point(r1) << "/" << lcc.point(lcc.beta(r1, 1)) << std::endl;
+              Dart_handle match = get_matching_dart(r, r1);
+              if(match != r){
+                match_found = true; 
+                match1 = r; 
+                match2 = match;
+                break;
+              }
+            }
+            if(match_found){
+              break;
+            }           
+          }
+
+          if(match_found){
+            std::cout << "sewing along match : " << std::endl;
+            std::cout << "match1: " << lcc.point(match1) << "/" << lcc.point(lcc.beta(match1, 1)) << std::endl;
+            std::cout << "match2: " << lcc.point(match2) << "/" << lcc.point(lcc.beta(match2, 1)) << std::endl;
+            lcc.sew<dim-1>(match1, match2);
+          }
+
         }
 
       }
 
-      // Delete visible set (when you delete a dart, make sure not to try to process that face later)
-      // Resort outside set of deleted facets
+      // Resort outside sets of visible set & delete them
+      // Emptying their outside sets will prevent us from processing them later, since we only
+      // process facets with nonempty outside sets! 
 
+      exit(1);
     }
   }
 
@@ -384,6 +409,21 @@ p_vector get_ridge_vertices(Dart_handle handle){
     }       
   }
   return p;
+}
+
+// Check if d1 and d2 are on ridges that match (have same length, same coords, opposite direction); if so, return the dart that 
+// corresponds to d1 in d2's ridge
+// This is arguably simpler in 3 and 4d because the ridges are lines and triangles, which have a pretty natural ordering
+// Right now returning d1 if there is no match TODO: make this nicer
+Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2){
+  if(dim==3){
+    Point p1 = lcc.point(d1);
+    Point p2 = lcc.point(lcc.beta(d1, 1));
+    if(lcc.point(d2) == p2 && lcc.point(lcc.beta(d2, 1)) == p1){
+      return d2;
+    }
+  }
+  return d1; 
 }
 
 
