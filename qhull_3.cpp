@@ -67,22 +67,20 @@ p_vector get_ridge_vertices(Dart_handle d);
 
 int main(){
   // Load points into a list
-  double origin[3] = {0,0,0};
-  double coords[6][3] = {{1,1,1}, {2,3,5}, {0,10,5}, {6,7,7}, {15,20,10}, {80, 90, -10}};
   Point o = Point(0,0,0);
-  Point p1 = Point(1,1,1);
-  Point p2 = Point(2,3,5);
-  Point p3 = Point(0,10,5);
-  Point p4 = Point(6,7,7);
-  Point p5 = Point(15,-20,10);
-  Point p6 = Point(80, 90, -10);
+  Point p1 = Point(0,-2,0);
+  Point p2 = Point(0,0,5);
+  Point p3 = Point(0,5,0);
+  Point p4 = Point(5,0,0);
+  Point p5 = Point(-5,1,1);
+  //Point p6 = Point(80, 90, -10);
   p_vector points;
   points.push_back(p1);
   points.push_back(p2);
   points.push_back(p3);
   points.push_back(p4);
   points.push_back(p5);
-  points.push_back(p6);
+  //points.push_back(p6);
 
   // Call quickhull
   quickhull(points);
@@ -90,12 +88,25 @@ int main(){
 
 // Given a set of d-dimensional points, constructs their convex hull in lcc
 void quickhull(p_vector points){
-  // Find initial (independent, ideally extreme) points
+
+/*  // Find initial (independent, ideally extreme) points
   p_vector extremes = find_initial_points(points);
   // Construct simplex
   for(int i=0; i<extremes.size(); i++){
     std::cout << extremes[i] << std::endl;
+  }*/
+
+  // Manually selecting extreme points for debugging
+  p_vector extremes;
+  extremes.push_back(points[0]);
+  extremes.push_back(points[1]);
+  extremes.push_back(points[2]);
+  extremes.push_back(points[3]);
+
+  for(int i=0; i<extremes.size(); i++){
+    std::cout << extremes[i] << std::endl;
   }
+
   lcc.make_tetrahedron(extremes[0], extremes[1], extremes[2], extremes[3]);
 
   // Create & associate 2-attributes to all darts
@@ -119,7 +130,7 @@ void quickhull(p_vector points){
     f.plane = Plane(f.vertices[0], f.vertices[1], f.vertices[2]);
     Point other = lcc.point(lcc.beta(lcc.beta(it, 2), 0));
     if(f.plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
-        std::cout << "switching plane"; 
+        std::cout << "switching plane" << std::endl; 
         f.plane = f.plane.opposite(); // Remember to free this later
     }
     facets.push_back(f);
@@ -188,14 +199,23 @@ void quickhull(p_vector points){
         // Pop next dart 
         Dart_handle curr = to_visit.front();
         to_visit.pop_front();
+        std::cout << "CURR: " << std::endl;
+        std::cout << lcc.point(curr) << std::endl;
+        std::cout << lcc.point(lcc.beta(curr, 1)) << std::endl;
 
         // Mark darts of this cell visited
         // & Grab adjacent darts
         for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(curr).begin(), itend = lcc.darts_of_cell<dim-1>(curr).end(); it != itend; ++it){
           lcc.mark(it, m);
+          std::cout << "IT: " << std::endl;
+          std::cout << lcc.point(it) << std::endl;
+          std::cout << lcc.point(lcc.beta(it, 1)) << std::endl;
           
           // Dart in adjacent cell to current dart
-          Dart_handle cross = lcc.beta(curr, dim-1);
+          Dart_handle cross = lcc.beta(it, dim-1);
+          std::cout << "CROSS: " << std::endl;
+          std::cout << lcc.point(cross) << std::endl;
+          std::cout << lcc.point(lcc.beta(cross, 1)) << std::endl;
           // If dart is marked - ignore
           // If dart plane is visible - add to to_visit
           // If dart plane is not visible - add this ridge to boundary
@@ -205,6 +225,7 @@ void quickhull(p_vector points){
               visible.push_back(cross);
             } else {
               boundary.push_back(cross);
+              std::cout << "Pushing to boundary: " << lcc.point(cross) << std::endl;
             } // TODO: Account for coplanar case
           }
         }        
@@ -225,9 +246,9 @@ void quickhull(p_vector points){
         }
 
         Dart_handle new_facet = lcc.make_triangle(ridge_points[1], ridge_points[0], max_p);
-        std::cout << "new_facet: " << lcc.point(new_facet);
-        std::cout << "new_facet next: " << lcc.point(lcc.beta(new_facet, 1));
-        std::cout << "new_facet next next : " << lcc.point(lcc.beta(lcc.beta(new_facet, 1), 1));
+        std::cout << "new_facet: " << lcc.point(new_facet) << std::endl;
+        std::cout << "new_facet next: " << lcc.point(lcc.beta(new_facet, 1)) << std::endl;
+        std::cout << "new_facet next next : " << lcc.point(lcc.beta(lcc.beta(new_facet, 1), 1)) << std::endl;
                
         // Unlink from current (visible) facet and link to new facet along the boundary ridge
         lcc.unsew<dim-1>(curr);
@@ -244,16 +265,30 @@ void quickhull(p_vector points){
         f.plane = Plane(f.vertices[0], f.vertices[1], f.vertices[2]);
         Point other = lcc.point(lcc.beta(curr, 0));
         if(f.plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
-          std::cout << "switching plane"; 
+          std::cout << "switching plane" << std::endl;
           f.plane = f.plane.opposite(); // Remember to free this later
         }
         facets.push_back(f);
       }
 
       // Glue together new facets along matching edges
+      // This loop should iterate through pairs of facets 
+      for(dart_list::iterator it = new_facets.begin(), itend = new_facets.end(); it!=itend; ++it){
+        dart_list::iterator it2 = it; 
+        it2++; 
+        for(dart_list::iterator itend2 = new_facets.end(); it2!=itend2; ++it2){
+          std::cout << "PAIR: " << std::endl; 
+          std::cout << "it1 1: " << lcc.point(*it) << std::endl;
+          std::cout << "it1 2: " << lcc.point(lcc.beta(*it, 1)) << std::endl; 
+          std::cout << "it2 1: " << lcc.point(*it2) << std::endl;
+          std::cout << "it2 2: " << lcc.point(lcc.beta(*it2, 1)) << std::endl;     
+        }
+
+      }
 
       // Delete visible set (when you delete a dart, make sure not to try to process that face later)
       // Resort outside set of deleted facets
+
     }
   }
 
