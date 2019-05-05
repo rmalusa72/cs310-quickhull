@@ -17,9 +17,11 @@ typedef CGAL::Cartesian<double> K;
 typedef CGAL::Vector_3<K> Vector;
 typedef CGAL::Segment_3<K> Segment;
 typedef CGAL::Plane_3<K> Plane;
+typedef CGAL::Point_3<K> Point;
 typedef K::Compute_squared_distance_3 Squared_distance;
 typedef K::Orientation_3 Orientation;
 typedef K::Coplanar_3 not_independent;
+typedef std::vector<Point> p_vector;
 
 // typedef CGAL::Cartesian_d<double> K;
 // typedef CGAL::Vector_d<K> Vector;
@@ -38,15 +40,13 @@ struct Lcc_attributes_normal
   struct Dart_wrapper
   {
     typedef CGAL::Cell_attribute_with_point<Refs, void> Point_attribute;
-    typedef CGAL::Cell_attribute<Refs, Plane> Facet_attribute;
+    typedef CGAL::Cell_attribute<Refs, CGAL::cpp11::tuple<Plane, p_vector*>> Facet_attribute;
     typedef CGAL::cpp11::tuple<Point_attribute, void, Facet_attribute, void> Attributes;
   };
 };
 
 typedef CGAL::Linear_cell_complex_for_combinatorial_map<dim, dim, CGAL::Linear_cell_complex_traits<dim, K>, Lcc_attributes_normal> LCC;
 typedef LCC::Dart_handle                                 Dart_handle;
-typedef LCC::Point                                       Point;
-typedef std::vector<Point> p_vector;
 typedef std::list<Dart_handle> dart_list;
 LCC lcc; 
 
@@ -240,6 +240,7 @@ void quickhull(p_vector points){
         }
 
         Dart_handle new_facet = lcc.make_triangle(ridge_points[1], ridge_points[0], max_p);
+
         std::cout << "new_facet: " << lcc.point(new_facet) << std::endl;
         std::cout << "new_facet next: " << lcc.point(lcc.beta(new_facet, 1)) << std::endl;
         std::cout << "new_facet next next : " << lcc.point(lcc.beta(lcc.beta(new_facet, 1), 1)) << std::endl;
@@ -263,6 +264,19 @@ void quickhull(p_vector points){
           f.plane = f.plane.opposite(); // Remember to free this later
         }
         facets.push_back(f);
+
+        // Create & associate 2-attributes to new darts
+        for (LCC::Dart_of_cell_range::iterator
+          n=lcc.darts_of_cell<dim-1>(new_facet).begin(), n_end=lcc.darts_of_cell<dim-1>(new_facet).end();
+          n!=n_end; ++n)
+        {
+          if ( lcc.attribute<dim-1>(n)==NULL )
+          lcc.set_attribute<dim-1>(n, lcc.create_attribute<dim-1>());
+        }
+
+        // Set those attributes to the plane of the new facet
+        lcc.info<dim-1>(new_facet) = f.plane; 
+
       }
 
       // Glue together new facets along matching edges
@@ -312,8 +326,25 @@ void quickhull(p_vector points){
       // Resort outside sets of visible set & delete them
       // Emptying their outside sets will prevent us from processing them later, since we only
       // process facets with nonempty outside sets! 
+      // ........... oh my god i need to associate outside sets with faces TOO???? 
 
-      exit(1);
+      for(int i=0; i<points.size(); i++){
+        Point curr_point = points[i];
+        if(std::find(extremes.begin(), extremes.end(), curr_point) == extremes.end()){
+            std::cout << "curr point: " << curr_point << std::endl;
+            for(facet_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
+                if((*it).plane.oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
+                    std::cout << "point on pos side according to plane" << std::endl;
+                    std::cout << i << std::endl; 
+                    (*it).outside_set.push_back(curr_point);
+                    std::cout << "outside size: " << (*it).outside_set.size();
+                    break;
+                }          
+            }   
+        }
+      }      
+
+
     }
   }
 
