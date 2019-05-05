@@ -40,7 +40,7 @@ struct Lcc_attributes_normal
   struct Dart_wrapper
   {
     typedef CGAL::Cell_attribute_with_point<Refs, void> Point_attribute;
-    typedef CGAL::Cell_attribute<Refs, CGAL::cpp11::tuple<Plane, p_vector*>> Facet_attribute;
+    typedef CGAL::Cell_attribute<Refs, std::pair<Plane, p_vector*>> Facet_attribute;
     typedef CGAL::cpp11::tuple<Point_attribute, void, Facet_attribute, void> Attributes;
   };
 };
@@ -50,21 +50,13 @@ typedef LCC::Dart_handle                                 Dart_handle;
 typedef std::list<Dart_handle> dart_list;
 LCC lcc; 
 
-class facet{
-    public:
-    Dart_handle handle;
-    p_vector vertices;
-    p_vector outside_set;
-    Plane plane; 
-};
-
-typedef std::list<facet> facet_list; 
-
 void quickhull(p_vector points);
 p_vector find_initial_points(p_vector points);
 p_vector get_cell_vertices(Dart_handle d);
 p_vector get_ridge_vertices(Dart_handle d);
 Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2);
+Plane* face_plane(Dart_handle dh);
+p_vector* outside_set(Dart_handle dh);
 
 int main(){
   // Load points into a list
@@ -113,23 +105,22 @@ void quickhull(p_vector points){
   }
 
   // Store darts from each face in list of facets
-  facet_list facets; 
+  dart_list facets; 
   for(LCC::One_dart_per_cell_range<2>::iterator it = lcc.one_dart_per_cell<2>().begin(), itend = lcc.one_dart_per_cell<2>().end(); it != itend; ++it){
-    facet f;
-    f.handle = it; 
-    f.vertices = get_cell_vertices(it);
+    p_vector vertices = get_cell_vertices(it);
     // Need to make sure this is the outward-facing plane - that the other hull point is outside it 
     // In dD can provide a point on other side, but in 3D have to do it ourselves by grabbing the point at the vertex of the simplex
     // that isn't in this face
-    f.plane = Plane(f.vertices[0], f.vertices[1], f.vertices[2]);
+    // TODO account for case with more than three vertices to a facet (not here but later)
+    Plane plane = Plane(vertices[0], vertices[1], vertices[2]);
     Point other = lcc.point(lcc.beta(lcc.beta(it, 2), 0));
-    if(f.plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
+    if(plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
         std::cout << "switching plane" << std::endl; 
-        f.plane = f.plane.opposite(); // Remember to free this later
+        plane = plane.opposite(); // Remember to free this later
     }
-    facets.push_back(f);
-    // Associate facet plane to this facet
-    lcc.info<dim-1>(it) = f.plane;
+    p_vector outside; 
+    lcc.info<dim-1>(it) = std::make_pair(plane, &outside);
+    facets.push_back(it);
   }
 
   // Sort other points into outside sets
@@ -138,45 +129,32 @@ void quickhull(p_vector points){
     Point curr_point = points[i];
     if(std::find(extremes.begin(), extremes.end(), curr_point) == extremes.end()){
         std::cout << "curr point: " << curr_point << std::endl;
-        for(facet_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
-            if((*it).plane.oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
+        for(dart_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
+            if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
                 std::cout << "point on pos side according to plane" << std::endl;
                 std::cout << i << std::endl; 
-                (*it).outside_set.push_back(curr_point);
-                std::cout << "outside size: " << (*it).outside_set.size();
+                (*(outside_set(*it))).push_back(curr_point);
                 break;
             }          
         }   
     }
   }
 
-  for(facet_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
-    std::cout << "vertices: ";
-    for(int i=0; i < (*it).vertices.size(); i++){
-        std::cout << (*it).vertices[i] << "/"; 
-    }
-    std::cout << std::endl << "outside set: ";
-    for(int i = 0; i < (*it).outside_set.size(); i++){
-        std::cout << (*it).outside_set[i] << "/";
-    }
-    std::cout << std::endl; 
-  }
-
-  facet curr_facet; 
+  Dart_handle curr_facet; 
   // Iterate thru face list until it is empty
   while(facets.size() != 0){
     curr_facet = facets.front();
     facets.pop_front();
-    if (curr_facet.outside_set.size() != 0){
+    if ((*(outside_set(curr_facet))).size() != 0){
       // Find furthest point
-      Point max_p = curr_facet.outside_set[0]; 
-      double max_distance = Squared_distance()(max_p, curr_facet.plane);
-      for(int i=1; i<curr_facet.outside_set.size(); i++){
+      Point max_p = (*(outside_set(curr_facet)))[0]; 
+      double max_distance = Squared_distance()(max_p, (*(face_plane(curr_facet))));
+      for(int i=1; i<(*(outside_set(curr_facet))).size(); i++){
         // For 4d will have to use my squared_distance and not the built-in one
-        double curr_distance = Squared_distance()(curr_facet.outside_set[i], curr_facet.plane);
+        double curr_distance = Squared_distance()((*(outside_set(curr_facet)))[i], (*(face_plane(curr_facet))));
         if(curr_distance > max_distance){
           max_distance = curr_distance;
-          max_p = curr_facet.outside_set[i];
+          max_p = (*(outside_set(curr_facet)))[i];
         }
       }
       
@@ -185,8 +163,8 @@ void quickhull(p_vector points){
       dart_list to_visit;
       dart_list boundary; 
       dart_list new_facets;
-      to_visit.push_back(curr_facet.handle);
-      visible.push_back(curr_facet.handle);
+      to_visit.push_back(curr_facet);
+      visible.push_back(curr_facet);
 
       LCC::size_type m = lcc.get_new_mark(); 
       while(to_visit.size() != 0){
@@ -214,7 +192,7 @@ void quickhull(p_vector points){
           // If dart plane is visible - add to to_visit
           // If dart plane is not visible - add this ridge to boundary
           if (!(lcc.is_marked(cross, m))){
-            if(lcc.info<dim-1>(cross).oriented_side(max_p) == CGAL::ON_POSITIVE_SIDE){
+            if((*(face_plane(cross))).oriented_side(max_p) == CGAL::ON_POSITIVE_SIDE){
               to_visit.push_back(cross);
               visible.push_back(cross);
             } else {
@@ -254,19 +232,17 @@ void quickhull(p_vector points){
 
         // Find facet normal and add it to list, at some point
         // use any other point on hull to determine which side is positive and which side is negative (? check that this point works)
-        facet f; 
-        f.handle = new_facet; 
-        f.vertices = get_cell_vertices(new_facet);
-        f.plane = Plane(f.vertices[0], f.vertices[1], f.vertices[2]);
+        
+        p_vector vertices = get_cell_vertices(new_facet);
+        Plane new_facet_plane = Plane(vertices[0], vertices[1], vertices[2]);
         Point other = lcc.point(lcc.beta(curr, 0));
-        if(f.plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
+        if(new_facet_plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
           std::cout << "switching plane" << std::endl;
-          f.plane = f.plane.opposite(); // Remember to free this later
+          new_facet_plane = new_facet_plane.opposite(); // Remember to free this later
         }
-        facets.push_back(f);
 
         // Create & associate 2-attributes to new darts
-        for (LCC::Dart_of_cell_range::iterator
+        for (LCC::Dart_of_cell_range<dim-1>::iterator
           n=lcc.darts_of_cell<dim-1>(new_facet).begin(), n_end=lcc.darts_of_cell<dim-1>(new_facet).end();
           n!=n_end; ++n)
         {
@@ -275,7 +251,8 @@ void quickhull(p_vector points){
         }
 
         // Set those attributes to the plane of the new facet
-        lcc.info<dim-1>(new_facet) = f.plane; 
+        p_vector new_facet_outside_set;
+        lcc.info<dim-1>(new_facet) = std::make_pair(new_facet_plane, &new_facet_outside_set); 
 
       }
 
@@ -326,28 +303,28 @@ void quickhull(p_vector points){
       // Resort outside sets of visible set & delete them
       // Emptying their outside sets will prevent us from processing them later, since we only
       // process facets with nonempty outside sets! 
-      // ........... oh my god i need to associate outside sets with faces TOO???? 
 
-      for(int i=0; i<points.size(); i++){
-        Point curr_point = points[i];
-        if(std::find(extremes.begin(), extremes.end(), curr_point) == extremes.end()){
-            std::cout << "curr point: " << curr_point << std::endl;
-            for(facet_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
-                if((*it).plane.oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
-                    std::cout << "point on pos side according to plane" << std::endl;
-                    std::cout << i << std::endl; 
-                    (*it).outside_set.push_back(curr_point);
-                    std::cout << "outside size: " << (*it).outside_set.size();
-                    break;
-                }          
-            }   
-        }
-      }      
-
-
+      // iterate through facets in visible set
+      for(dart_list::iterator v = visible.begin(), v_end = visible.end(); v != v_end; ++v){
+        // iterate through their outside sets
+        p_vector v_outside = *(outside_set(*v));
+        for(p_vector::iterator p = v_outside.begin(), p_end = v_outside.end(); p!=p_end; ++p){
+          // for each point in outside set
+          Point curr_point = *p; 
+          // for each new facet
+          for(dart_list::iterator it = new_facets.begin(), it_end = new_facets.end(); it!=it_end; ++it){
+            if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
+                (*(outside_set(*it))).push_back(curr_point);
+                break;
+            }                
+          }
+        } 
+        // Delete each visible facet
+        // Make dart lists into dart ptr lists to deal with the fact that this will leave some null?
+        lcc.remove_cell<dim-1>(*v);
+      }
     }
   }
-
   // Export finished hull as .OFF file 
 
 }
@@ -457,4 +434,11 @@ Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2){
   return d1; 
 }
 
+Plane* face_plane(Dart_handle dh){
+  return &(lcc.info<dim-1>(dh).first);
+}
+
+p_vector* outside_set(Dart_handle dh){
+  return lcc.info<dim-1>(dh).second;
+}
 
