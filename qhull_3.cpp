@@ -5,24 +5,13 @@
 #include <list>
 #include <vector>
 #include <random>
-#include <CGAL/Cartesian_d.h>
-#include <CGAL/constructions_d.h>
-#include <CGAL/predicates_d.h>
-//#include <CGAL/Cartesian.h>
 #include <CGAL/Homogeneous.h>
 #include <CGAL/Filtered_kernel.h>
 #include <CGAL/Linear_cell_complex_for_combinatorial_map.h>
 #include <CGAL/Linear_cell_complex_operations.h>
-#include <CGAL/enum.h>
 #include <CGAL/Gmpzf.h>
 
 const int dim = 3; 
-
-// TODO: Why are faces being duplicated in the visible set? 
-// (i.e. two permutations of one triangle will arise.)
-// Is this a boundary problem? 
-
-// TODO: Some floating previously-visible triangles may not be 2-free on all sides (linked to other such triangles). Fix write_off to account for this
 
 // Define kernel and its geometric objects
 typedef CGAL::Gmpzf Gmpzf;
@@ -91,23 +80,86 @@ bool get_deleted(Dart_handle dh);
 void write_off();
 
 // Load points into a vector, and call quickhull on it
-// TODO: read points from file
-int main(){
+int main(int argc, char *argv[]){
   p_vector points;
-  // Example points used for testing
-  // points.push_back(Point(0,-2,0));
-  // points.push_back(Point(0,0,5));
-  // points.push_back(Point(0,5,0));
-  // points.push_back(Point(5,0,0));
-  // points.push_back(Point(-5,1,1));
 
-  // Generating uniformly distributed random points 
-  double lower_bound = -100000;
-  double upper_bound = 100000;
-  std::uniform_real_distribution<double> unif(lower_bound,upper_bound);
-  std::default_random_engine re;
-  for(int i=0; i<100; i++){
-    points.push_back(Point(Gmpzf(unif(re)), Gmpzf(unif(re)), Gmpzf(unif(re))));
+  if(argc == 1){
+    std::cout << "Please provide parameters:" << std::endl; 
+    std::cout << "c to demonstrate a cube" << std::endl; 
+    std::cout << "r followed by an integer n to demonstrate on n points uniformly distributed in a cube (or no number for default 100)" << std::endl; 
+    std::cout << "f followed by absolute path to a file to read points from that file" << std::endl;
+    std::cout << "h for information on reading files" << std::endl; 
+    exit(0);
+  } else if(argv[1][0] == 'c'){
+    // Load points with vertices of a cube
+    points.push_back(Point(Gmpzf(0),Gmpzf(0),Gmpzf(0)));
+    points.push_back(Point(Gmpzf(0),Gmpzf(0),Gmpzf(5)));
+    points.push_back(Point(Gmpzf(0),Gmpzf(5),Gmpzf(0)));
+    points.push_back(Point(Gmpzf(5),Gmpzf(0),Gmpzf(0)));
+    points.push_back(Point(Gmpzf(0),Gmpzf(5),Gmpzf(5)));
+    points.push_back(Point(Gmpzf(5),Gmpzf(0),Gmpzf(5)));
+    points.push_back(Point(Gmpzf(5),Gmpzf(5),Gmpzf(0)));
+    points.push_back(Point(Gmpzf(5),Gmpzf(5),Gmpzf(5)));
+  } else if(argv[1][0] == 'r'){
+    int n;  
+    if(argc >= 2){
+      std::istringstream ss(argv[2]);
+      if(!(ss >> n)){
+        std::cerr << "Argument not accepted as integer\n";
+        exit(1);
+      }
+    } else {
+      n = 100;
+    }
+
+    // Load points with uniformly distributed points
+    double lower_bound = -100;
+    double upper_bound = 100;
+    std::uniform_real_distribution<double> unif(lower_bound,upper_bound);
+    std::default_random_engine re;
+    for(int i=0; i<n; i++){
+      points.push_back(Point(Gmpzf(unif(re)), Gmpzf(unif(re)), Gmpzf(unif(re))));
+    }
+  } else if(argv[1][0] == 'f'){
+    // Read points from a file
+    if(argc >= 2){
+      std::cout << "Please provide a file path as an argument" << std::endl;
+      exit(0);
+    } 
+    std::ifstream in;
+    in.open(argv[2]);
+    if (!in) {
+      std::cerr << "Unable to open file provided\n";
+      exit(1); 
+    }   
+
+    // In 3d version, the dimension value is ignored (as points are constructed from individual values, not arrays)
+    int dim_1;
+    in >> dim_1;
+    int num_points;
+    in >> num_points;
+    // TODO: in dD version use one variable & a vector
+    double curr_coordinate1;
+    double curr_coordinate2;
+    double curr_coordinate3; 
+    for(int i=0; i<num_points; i++){
+      in >> curr_coordinate1;
+      in >> curr_coordinate2;
+      in >> curr_coordinate3;
+      points.push_back(Point(Gmpzf(curr_coordinate1),Gmpzf(curr_coordinate2),Gmpzf(curr_coordinate3)));
+    }
+  } else if(argv[1][0] == 'h'){
+    std::cout << "Format for point list file:" << std::endl;
+    std::cout << "First line: dimension value\n";
+    std::cout << "Second line: number of points\n";
+    std::cout << "Subsequent lines: space separated coordinates (decimals accepted)\n";
+    std::cout << "Example file for a 3d cube provided in cube.txt\n";
+  } else {
+    std::cout << "Please provide parameters:" << std::endl; 
+    std::cout << "c to demonstrate a cube" << std::endl; 
+    std::cout << "r to demonstrate on points uniformly distributed in a cube" << std::endl; 
+    std::cout << "f followed by a filename to read points" << std::endl;
+    std::cout << "h for information on reading files" << std::endl;     
   }
 
   // Write points to a file for double checking with qhull
@@ -244,7 +296,7 @@ void quickhull(p_vector points){
             // If dart plane is not visible - add this ridge to boundary
             if (!(lcc.is_marked(cross, m))){
               std::cout << "Cross' face is not marked - proceeding" << std::endl;
-              if((*(face_plane(cross))).oriented_side(furthest_p) == CGAL::ON_POSITIVE_SIDE){
+              if((*(face_plane(cross))).oriented_side(furthest_p) == CGAL::ON_POSITIVE_SIDE || (*(face_plane(cross))).oriented_side(furthest_p) == CGAL::ON_ORIENTED_BOUNDARY){
                 std::cout << "Cross' plane is visible - push to visit and visible" << std::endl;
                 to_visit.push_back(cross);
                 visible.push_back(cross);
@@ -304,7 +356,7 @@ void quickhull(p_vector points){
 
 void write_points(p_vector* plist_ptr){
   std::ofstream pt_output; 
-  pt_output.open("input_pts.off");
+  pt_output.open("input_pts.txt");
   pt_output << dim << std::endl; 
   pt_output << (*plist_ptr).size() << std::endl; 
   for(int i=0; i<(*plist_ptr).size(); i++){
@@ -318,6 +370,8 @@ void write_points(p_vector* plist_ptr){
 
 // Given a list of d-dimensional points,
 // return d+1 linearly independent points, ideally extreme 
+// TODO: Adapt for dD, this is clunky because of 3D predicates
+// TODO: Proof against empty/small sets
 p_vector find_initial_points(p_vector points){
   p_vector extremes;
   CGAL::Quotient<Gmpzf> extreme_coordinates[2*dim];
@@ -392,7 +446,7 @@ void make_all_facets(dart_list* flist_ptr){
 
     // If some other point in the simplex is on the positive side of the newly created plane, 
     // reverse it so that it faces out
-    Point other = lcc.point(lcc.beta(lcc.beta(it, 2), 0)); // TODO will this work for higher dimensions? 
+    Point other = lcc.point(lcc.beta(lcc.beta(it, 2), 0)); // TODO pick out other dart for higher dimensions 
     if(plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
         plane = plane.opposite(); // TODO free/delete the old plane ? 
     }
@@ -414,7 +468,7 @@ void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr, bool igno
     Point curr_point = points[i];
     if(!ignore_point || (curr_point != point_to_ignore)){
       for(dart_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
-        if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
+        if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE || (*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_ORIENTED_BOUNDARY){
             (*(outside_set(*it))).push_back(curr_point);
             break;
         }             
@@ -466,7 +520,6 @@ p_vector get_ridge_vertices(Dart_handle handle){
 // Join point furthest_p to the ridges of the boundary list with a set of new facets; 
 // put a handle to each new facet in the new_facets list.
 // Note: leaves visible facets floating/unconnected
-// TODO: Is this where facets are floating off and getting lost?? 
 void make_facet_cone(dart_list* boundary_ptr, Point* furthest_p_ptr, dart_list* new_facets){
   dart_list boundary = *boundary_ptr; 
   Point furthest_p = *furthest_p_ptr; 
@@ -499,7 +552,7 @@ void make_facet_cone(dart_list* boundary_ptr, Point* furthest_p_ptr, dart_list* 
       new_facet_plane = new_facet_plane.opposite(); // Remember to free this later
     }
 
-    // Create & associate 2-attributes to new darts
+    // Create & associate dim-1-attributes to new darts
     for (LCC::Dart_of_cell_range<dim-1>::iterator
       n=lcc.darts_of_cell<dim-1>(new_facet).begin(), n_end=lcc.darts_of_cell<dim-1>(new_facet).end();
       n!=n_end; ++n)
@@ -596,7 +649,7 @@ void write_off(){
   Point p; 
   for(LCC::One_dart_per_cell_range<0>::iterator it = lcc.one_dart_per_cell<0>().begin(), itend = lcc.one_dart_per_cell<0>().end(); it!=itend; ++it){
     string vertex;
-    //if(lcc.highest_nonfree_dimension(it) == 2){
+    if(!get_deleted(it)){
       lcc.info<0>(it) = num_vertices;
       p = lcc.point(it);
       for(int i=0; i<dim; i++){
@@ -604,15 +657,15 @@ void write_off(){
       }
       vertices.push_back(vertex);
       num_vertices++; 
-    //}
+    }
   }
 
   int num_faces = 0;
   int vertices_of_face;
   string face = "";
-  for(LCC::One_dart_per_cell_range<2>::iterator it = lcc.one_dart_per_cell<2>().begin(), itend = lcc.one_dart_per_cell<2>().end(); it!=itend; ++it){
+  for(LCC::One_dart_per_cell_range<dim-1>::iterator it = lcc.one_dart_per_cell<dim-1>().begin(), itend = lcc.one_dart_per_cell<dim-1>().end(); it!=itend; ++it){
     std::cout << "face 2-free status:" << std::endl;
-    //if(lcc.highest_nonfree_dimension(it) == 2){
+    if(!get_deleted(it)){
       num_faces++;
       vertices_of_face = 0; 
       for(LCC::Dart_of_cell_range<dim-1>::iterator it2 = lcc.darts_of_cell<dim-1>(it).begin(), itend2 = lcc.darts_of_cell<dim-1>(it).end(); 
@@ -624,7 +677,7 @@ void write_off(){
       std::cout << std::endl; 
       faces.push_back(std::to_string(vertices_of_face) + " " + face);
       face = "";
-    //}
+    }
   }
 
   hull_output << num_vertices << " " << num_faces << " 0\n";
