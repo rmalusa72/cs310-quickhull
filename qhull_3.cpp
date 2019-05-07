@@ -1,41 +1,41 @@
-#include <CGAL/Linear_cell_complex_for_combinatorial_map.h>
-#include <CGAL/Linear_cell_complex_operations.h>
-#include <CGAL/enum.h>
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
 #include <cmath>
+#include <list>
+#include <vector>
+#include <random>
 #include <CGAL/Cartesian_d.h>
 #include <CGAL/constructions_d.h>
 #include <CGAL/predicates_d.h>
 #include <CGAL/Cartesian.h>
-#include <list>
-#include <vector>
+#include <CGAL/Linear_cell_complex_for_combinatorial_map.h>
+#include <CGAL/Linear_cell_complex_operations.h>
+#include <CGAL/enum.h>
 
 const int dim = 3; 
 
+// Define kernel and its geometric objects
 typedef CGAL::Cartesian<double> K;
 typedef CGAL::Vector_3<K> Vector;
 typedef CGAL::Segment_3<K> Segment;
 typedef CGAL::Plane_3<K> Plane;
 typedef CGAL::Point_3<K> Point;
+
+// Define functions from kernel
 typedef K::Compute_squared_distance_3 Squared_distance;
 typedef K::Orientation_3 Orientation;
 typedef K::Coplanar_3 not_independent;
+
+// Define vector of points for use in attributes
 typedef std::vector<Point> p_vector;
-typedef std::string string;
 
-// typedef CGAL::Cartesian_d<double> K;
-// typedef CGAL::Vector_d<K> Vector;
-// typedef CGAL::Segment_d<K> Segment;
-// typedef K::Squared_distance_d Squared_distance;
-// typedef K::Orientation_d Orientation;
-// typedef K::Affinely_independent_d independent;
-// typedef CGAL::Linear_cell_complex_for_combinatorial_map<dim, dim, CGAL::Linear_cell_complex_traits<dim, K>> LCC;
-// typedef LCC::Dart_handle                                 Dart_handle;
-// typedef LCC::Point                                       Point;
-// typedef std::vector<Point> vector;
-
+// Define attributes of linear cell complex: 
+// 0. a point, by default, plus an int used for indexing when outputting to .off 
+// dim-1. (here, 2) a tuple:
+//     * a plane (the supporting plane of the facet)
+//     * a vector of points (the outside set of the facet)
+//     * a boolean (whether the facet has been processed as part of a visible set and should be deleted)
 struct Lcc_attributes_normal
 {
   template<class Refs>
@@ -47,16 +47,28 @@ struct Lcc_attributes_normal
   };
 };
 
+// Define linear cell complex with desired kernel and attributes
 typedef CGAL::Linear_cell_complex_for_combinatorial_map<dim, dim, CGAL::Linear_cell_complex_traits<dim, K>, Lcc_attributes_normal> LCC;
 typedef LCC::Dart_handle                                 Dart_handle;
 typedef std::list<Dart_handle> dart_list;
+
+// String class used in writing file
+typedef std::string string;
+
+// The LCC that is used for all of our operations
 LCC lcc; 
 
-p_vector vect_ptr();
+// Function headers TODO: move these to a .h file
+void write_points(p_vector* plist_ptr);
 void quickhull(p_vector points);
 p_vector find_initial_points(p_vector points);
+void make_all_facets(dart_list* flist_ptr);
+void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr);
+Point get_furthest_point(Dart_handle d);
 p_vector get_cell_vertices(Dart_handle d);
 p_vector get_ridge_vertices(Dart_handle d);
+void make_facet_cone(dart_list* boundary_ptr, Point* furthest_p_ptr, dart_list* new_facets);
+void glue_matching_facets(dart_list* facets);
 Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2);
 Plane* face_plane(Dart_handle dh);
 p_vector* outside_set(Dart_handle dh);
@@ -64,138 +76,118 @@ void set_deleted(Dart_handle dh, bool val);
 bool get_deleted(Dart_handle dh);
 void write_off();
 
+// Load points into a vector, and call quickhull on it
+// TODO: read points from file
 int main(){
-  // Load points into a list
-  Point o = Point(0,0,0);
-  Point p1 = Point(0,-2,0);
-  Point p2 = Point(0,0,5);
-  Point p3 = Point(0,5,0);
-  Point p4 = Point(5,0,0);
-  Point p5 = Point(-5,1,1);
-  //Point p6 = Point(80, 90, -10);
   p_vector points;
-  points.push_back(p1);
-  points.push_back(p2);
-  points.push_back(p3);
-  points.push_back(p4);
-  points.push_back(p5);
-  //points.push_back(p6);
+  // Example points used for testing
+  // points.push_back(Point(0,-2,0));
+  // points.push_back(Point(0,0,5));
+  // points.push_back(Point(0,5,0));
+  // points.push_back(Point(5,0,0));
+  // points.push_back(Point(-5,1,1));
 
-  // Call quickhull
+  // Generating uniformly distributed random points 
+  double lower_bound = -100;
+  double upper_bound = 100;
+  std::uniform_real_distribution<double> unif(lower_bound,upper_bound);
+  std::default_random_engine re;
+  for(int i=0; i<20; i++){
+    points.push_back(Point(unif(re), unif(re), unif(re)));
+  }
+
+  // Write points to a file for double checking with qhull
+  write_points(&points);
+
+  // The quickhull function constructs the hull in lcc
+  // and writes the polytope to the hull_output.off file
   quickhull(points);
 }
 
-p_vector vect_ptr(){
-  p_vector p; 
-  return p;
-}
-
-// Given a set of d-dimensional points, constructs their convex hull in lcc
+// Given a set of d-dimensional points, this function constructs their convex hull
+// in the linear cell complex lcc, and then writes it to a .off file. 
 void quickhull(p_vector points){
 
-  // Find initial (independent, ideally extreme) points
-  p_vector extremes = find_initial_points(points);
-  // Construct simplex
-  for(int i=0; i<extremes.size(); i++){
-    std::cout << extremes[i] << std::endl;
+  // Find initial points - independent, ideally extreme
+  p_vector initial_points = find_initial_points(points);
+  // Construct simplex TODO: adapt for higher dimension
+  lcc.make_tetrahedron(initial_points[0], initial_points[1], initial_points[2], initial_points[3]);
+
+  // PRINT each point of the initial set 
+  for(int i=0; i<initial_points.size(); i++){
+    std::cout << initial_points[i] << std::endl;
   }
 
-  lcc.make_tetrahedron(extremes[0], extremes[1], extremes[2], extremes[3]);
-
-  // Create & associate 2-attributes to all darts
+  // Associate a new dim-1-attribute to each dart
   for (LCC::Dart_range::iterator
        it=lcc.darts().begin(), itend=lcc.darts().end();
        it!=itend; ++it)
   {
-    if ( lcc.attribute<dim-1>(it)==NULL )
+    if (lcc.attribute<dim-1>(it)==NULL){
       lcc.set_attribute<dim-1>(it, lcc.create_attribute<dim-1>());
-  }
+    }
+  }  
 
-  // Store darts from each face in list of facets
+  // Initialize the list of facets to be processed with the newly created facets
   dart_list facets; 
-  p_vector* outside; 
-  for(LCC::One_dart_per_cell_range<2>::iterator it = lcc.one_dart_per_cell<2>().begin(), itend = lcc.one_dart_per_cell<2>().end(); it != itend; ++it){
-    p_vector vertices = get_cell_vertices(it);
-    // Need to make sure this is the outward-facing plane - that the other hull point is outside it 
-    // In dD can provide a point on other side, but in 3D have to do it ourselves by grabbing the point at the vertex of the simplex
-    // that isn't in this face
-    // TODO account for case with more than three vertices to a facet (not here but later)
-    Plane plane = Plane(vertices[0], vertices[1], vertices[2]);
-    Point other = lcc.point(lcc.beta(lcc.beta(it, 2), 0));
-    if(plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
-        //std::cout << "switching plane" << std::endl; 
-        plane = plane.opposite(); // Remember to free this later
-    }
-    lcc.info<dim-1>(it) = std::make_tuple(plane, new p_vector(), false);
-    facets.push_back(it);
-  }
+  make_all_facets(&facets); 
 
-  // Sort other points into outside sets
-  // Make sure orientation here is correct
+  // Create a copy of the points vector without the extreme points 
+  p_vector remaining_points;
   for(int i=0; i<points.size(); i++){
-    Point curr_point = points[i];
-    if(std::find(extremes.begin(), extremes.end(), curr_point) == extremes.end()){
-        //std::cout << "curr point: " << curr_point << std::endl;
-        for(dart_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
-            if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
-                //std::cout << "point on pos side according to plane" << std::endl;
-                //std::cout << i << std::endl; 
-                (*(outside_set(*it))).push_back(curr_point);
-                std::cout << "pushing2" << std::endl; 
-                break;
-            }          
-        }   
+    if(std::find(initial_points.begin(), initial_points.end(), points[i]) == initial_points.end()){
+      remaining_points.push_back(points[i]);
     }
   }
 
-  (*(outside_set(facets.front()))).push_back(Point(0,0,0));
+  // Sort the remaining points into outside sets 
+  sort_into_outside_sets(&remaining_points, &facets);
+
+  // PRINT info on facets
   for(dart_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
     std::cout << (*(outside_set(*it))).size() << std::endl; 
     std::cout << (*(face_plane(*it))) << std::endl; 
   }
 
-
-  Dart_handle curr_facet; 
-  // Iterate thru face list until it is empty
+  // Iterate through list of facets to be processed until it is empty 
   while(facets.size() != 0){
 
-    std::cout << "Num facets in list: " << facets.size();
+    // PRINT info about current state of facets list 
+    std::cout << "Num facets in list: " << facets.size() << std::endl;
     for(dart_list::iterator f = facets.begin(), fend = facets.end(); f!=fend; ++f){
       std::cout << "Facet handle: " << lcc.point(*f) << "/" << lcc.point(lcc.beta(*f, 1)) << "/" << lcc.point(lcc.beta(lcc.beta(*f, 1), 1))  << std::endl;
       std::cout << "To be deleted: " << get_deleted(*f) << std::endl; 
-      std::cout << "Outside set size: " << (*(outside_set(*f))).size();
+      std::cout << "Outside set size: " << (*(outside_set(*f))).size() << std::endl;
     }
-
     lcc.display_characteristics(std::cout);
-    curr_facet = facets.front();
+    std::cout << std::endl; 
+
+    // Pop first handle from facets list 
+    Dart_handle curr_facet = facets.front();
     facets.pop_front();
+
+    // Facet may be a remnant that has already been processed as part of a visible set
+    // If so, its boolean get_deleted attribute will be true 
     if(get_deleted(curr_facet)){
       lcc.remove_cell<dim-1>(curr_facet);
       std::cout << "Removing previously processed facet!" << std::endl;
       continue; 
     }
+
+    // PRINT information about this facet's outside set 
     std::cout << "outside list size: " << (*(outside_set(curr_facet))).size() << std::endl;
     for(int i=0; i<(*(outside_set(curr_facet))).size(); i++){
       std::cout << i << ": " <<  (*(outside_set(curr_facet)))[i] << std::endl; 
     }
+
+    // If facet has points in outside set, execute quickhull step 
     if ((*(outside_set(curr_facet))).size() != 0){
-      // Find furthest point
-      Point max_p = (*(outside_set(curr_facet)))[0]; 
-      double max_distance = Squared_distance()(max_p, (*(face_plane(curr_facet))));
-      for(int i=1; i<(*(outside_set(curr_facet))).size(); i++){
-        // For 4d will have to use my squared_distance and not the built-in one
-        double curr_distance = Squared_distance()((*(outside_set(curr_facet)))[i], (*(face_plane(curr_facet))));
-        if(curr_distance > max_distance){
-          max_distance = curr_distance;
-          max_p = (*(outside_set(curr_facet)))[i];
-        }
-      }
+      Point furthest_p = get_furthest_point(curr_facet);
       
-      // Find visible set
-      dart_list visible; 
-      dart_list to_visit;
-      dart_list boundary; 
-      dart_list new_facets;
+      dart_list visible; // Will contain a handle on each visible facet
+      dart_list to_visit; // Used for breadth-first search
+      dart_list boundary; // Will contain a handle on each ridge bordering the visible set
+  
       to_visit.push_back(curr_facet);
       visible.push_back(curr_facet);
 
@@ -204,150 +196,56 @@ void quickhull(p_vector points){
         // Pop next dart 
         Dart_handle curr = to_visit.front();
         to_visit.pop_front();
-        //std::cout << "CURR: " << std::endl;
-        //std::cout << lcc.point(curr) << std::endl;
-        //std::cout << lcc.point(lcc.beta(curr, 1)) << std::endl;
 
         // Mark darts of this cell visited
         // & Grab adjacent darts
         for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(curr).begin(), itend = lcc.darts_of_cell<dim-1>(curr).end(); it != itend; ++it){
           lcc.mark(it, m);
-          //std::cout << "IT: " << std::endl;
-          //std::cout << lcc.point(it) << std::endl;
-          //std::cout << lcc.point(lcc.beta(it, 1)) << std::endl;
           
           // Dart in adjacent cell to current dart
           Dart_handle cross = lcc.beta(it, dim-1);
-          //std::cout << "CROSS: " << std::endl;
-          //std::cout << lcc.point(cross) << std::endl;
-          //std::cout << lcc.point(lcc.beta(cross, 1)) << std::endl;
+
           // If dart is marked - ignore
-          // If dart plane is visible - add to to_visit
+          // If dart plane is visible - add facet to to_visit
           // If dart plane is not visible - add this ridge to boundary
           if (!(lcc.is_marked(cross, m))){
-            if((*(face_plane(cross))).oriented_side(max_p) == CGAL::ON_POSITIVE_SIDE){
+            if((*(face_plane(cross))).oriented_side(furthest_p) == CGAL::ON_POSITIVE_SIDE){
               to_visit.push_back(cross);
               visible.push_back(cross);
             } else {
               boundary.push_back(cross);
-              //std::cout << "Pushing to boundary: " << lcc.point(cross) << std::endl;
             } // TODO: Account for coplanar case
           }
         }        
       }
-      // Now boundary should contain one dart from each ridge on boundary, and visible should contain one dart from each visible facet
-      //Free mark
       lcc.free_mark(m);
 
       // Join new point to boundary with new facets
-      while (boundary.size() != 0){
-        Dart_handle curr = boundary.front();
-        boundary.pop_front(); 
-        // build new simplex with vertices = points of curr and max_p, making sure it is oriented so it can be linked
-        // Note: for shapes of higher dimension than triangles this may require more complex fiddling
-        p_vector ridge_points = get_ridge_vertices(curr);
-        for(int i=0; i<ridge_points.size(); i++){
-          //std::cout << "ridge points " << i << ":" << ridge_points[i] << std::endl;
-        }
+      dart_list new_facets;
+      make_facet_cone(&boundary, &furthest_p, &new_facets);
 
-        Dart_handle new_facet = lcc.make_triangle(ridge_points[1], ridge_points[0], max_p);
-
-        //std::cout << "new_facet: " << lcc.point(new_facet) << std::endl;
-        //std::cout << "new_facet next: " << lcc.point(lcc.beta(new_facet, 1)) << std::endl;
-        //std::cout << "new_facet next next : " << lcc.point(lcc.beta(lcc.beta(new_facet, 1), 1)) << std::endl;
-               
-        // Unlink from current (visible) facet and link to new facet along the boundary ridge
-        lcc.unsew<dim-1>(curr);
-        lcc.sew<dim-1>(curr, new_facet);
-
-        // Add to list of new facets for later linking
-        new_facets.push_back(new_facet);
-
-        // Find facet normal and add it to list, at some point
-        // use any other point on hull to determine which side is positive and which side is negative (? check that this point works)
-        
-        p_vector vertices = get_cell_vertices(new_facet);
-        Plane new_facet_plane = Plane(vertices[0], vertices[1], vertices[2]);
-        Point other = lcc.point(lcc.beta(curr, 0));
-        if(new_facet_plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
-          //std::cout << "switching plane" << std::endl;
-          new_facet_plane = new_facet_plane.opposite(); // Remember to free this later
-        }
-
-        // Create & associate 2-attributes to new darts
-        for (LCC::Dart_of_cell_range<dim-1>::iterator
-          n=lcc.darts_of_cell<dim-1>(new_facet).begin(), n_end=lcc.darts_of_cell<dim-1>(new_facet).end();
-          n!=n_end; ++n)
-        {
-          if ( lcc.attribute<dim-1>(n)==NULL )
-          lcc.set_attribute<dim-1>(n, lcc.create_attribute<dim-1>());
-        }
-
-        // Set those attributes to the plane of the new facet
-        lcc.info<dim-1>(new_facet) = std::make_tuple(new_facet_plane, new p_vector(), false); 
-
+      // Add new facets to facet list to be processed
+      for(dart_list::iterator nf = new_facets.begin(), nf_end = new_facets.end(); nf!=nf_end; nf++){
+        facets.push_back(*nf);
       }
 
       // Glue together new facets along matching edges
-      // This loop iterates through pairs of facets 
-      for(dart_list::iterator it = new_facets.begin(), itend = new_facets.end(); it!=itend; ++it){
-        dart_list::iterator it2 = it; 
-        it2++; 
-        for(dart_list::iterator itend2 = new_facets.end(); it2!=itend2; ++it2){
-          bool match_found = false;
-          Dart_handle match1;
-          Dart_handle match2;
-          //std::cout << "PAIR: " << std::endl; 
-          //std::cout << "it1 1: " << lcc.point(*it) << std::endl;
-          //std::cout << "it1 2: " << lcc.point(lcc.beta(*it, 1)) << std::endl; 
-          //std::cout << "it2 1: " << lcc.point(*it2) << std::endl;
-          //std::cout << "it2 2: " << lcc.point(lcc.beta(*it2, 1)) << std::endl;
-
-          // Now, for each pair of facets, iterate through each pair of ridges!!!!
-          for(LCC::One_dart_per_incident_cell_range<dim-2,dim-1>::iterator r = lcc.one_dart_per_incident_cell<dim-2, dim-1>(*it).begin(), r_end = lcc.one_dart_per_incident_cell<dim-2,dim-1>(*it).end(); r!=r_end; ++r){
-            for(LCC::One_dart_per_incident_cell_range<dim-2,dim-1>::iterator r1 = lcc.one_dart_per_incident_cell<dim-2, dim-1>(*it2).begin(), r1_end = lcc.one_dart_per_incident_cell<dim-2,dim-1>(*it2).end(); r1!=r1_end; ++r1){
-              //std::cout << "ridge 1:" << lcc.point(r) << "/" << lcc.point(lcc.beta(r, 1)) << std::endl;
-              //std::cout << "ridge 2:" << lcc.point(r1) << "/" << lcc.point(lcc.beta(r1, 1)) << std::endl;
-              Dart_handle match = get_matching_dart(r, r1);
-              if(match != r){
-                match_found = true; 
-                match1 = r; 
-                match2 = match;
-                break;
-              }
-            }
-            if(match_found){
-              break;
-            }           
-          }
-
-          if(match_found){
-            //std::cout << "sewing along match : " << std::endl;
-            //std::cout << "match1: " << lcc.point(match1) << "/" << lcc.point(lcc.beta(match1, 1)) << std::endl;
-            //std::cout << "match2: " << lcc.point(match2) << "/" << lcc.point(lcc.beta(match2, 1)) << std::endl;
-            lcc.sew<dim-1>(match1, match2);
-          }
-
-        }
-
-      }
+      glue_matching_facets(&new_facets);
 
       std::cout << "Number of visible facets: " << visible.size() << std::endl; 
 
-      // Resort outside sets of visible set & delete them
+      // Resort outside sets of visible set
       // iterate through facets in visible set
+      // TODO: use outside set function for this! 
       for(dart_list::iterator v = visible.begin(), v_end = visible.end(); v != v_end; ++v){
         std::cout << "Processing visible facet:" << lcc.point(*v) << std::endl; 
         // iterate through their outside set
         p_vector v_outside = *(outside_set(*v));
         for(p_vector::iterator p = v_outside.begin(), p_end = v_outside.end(); p!=p_end; ++p){
-          // for each point in outside set (that is not max_p, which we've processed)
+          // for each point in outside set (that is not furthest_p, which we've processed)
           Point curr_point = *p; 
-          std::cout << "current point:" << curr_point << std::endl; 
-          std::cout << "max point:" << max_p << std::endl; 
-          if(curr_point != max_p){
+          if(curr_point != furthest_p){
             // for each new facet
-            std::cout << "pushing" << std::endl; 
             for(dart_list::iterator it = new_facets.begin(), it_end = new_facets.end(); it!=it_end; ++it){
               if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
                   (*(outside_set(*it))).push_back(curr_point);
@@ -356,13 +254,8 @@ void quickhull(p_vector points){
             }
           } 
         }
-        // Set boolean in all visible facets to false 
-        std::cout << "Dart " << lcc.point(*v) << " to be deleted? " << get_deleted(*v) << std::endl;
-        set_deleted(*v, true);
-        std::cout << "Dart " << lcc.point(*v) << " to be deleted? " << get_deleted(*v) << std::endl; 
-        std::cout << "Successor (" << lcc.point(lcc.beta(*v,1)) << ") to be deleted? " << get_deleted(lcc.beta(*v, 1)) << std::endl; 
-        std::cout << "Successor2 (" << lcc.point(lcc.beta(lcc.beta(*v,1),1)) << ") to be deleted? " << get_deleted(lcc.beta(lcc.beta(*v, 1),1)) << std::endl; 
-        
+        // Set boolean in all visible facets to false, so they will be deleted when they are processed later
+        set_deleted(*v, true);   
       }
       // Remove the facet we are processing directly, since it will not get re-added and processed
       lcc.remove_cell<dim-1>(curr_facet);
@@ -371,6 +264,20 @@ void quickhull(p_vector points){
   }
   // Export finished hull as .OFF file 
   write_off();
+}
+
+void write_points(p_vector* plist_ptr){
+  std::ofstream pt_output; 
+  pt_output.open("input_pts.off");
+  pt_output << dim << std::endl; 
+  pt_output << (*plist_ptr).size() << std::endl; 
+  for(int i=0; i<(*plist_ptr).size(); i++){
+    for(int j=0; j<dim; j++){
+      pt_output << std::to_string(((*plist_ptr)[i])[j]) << " ";
+    }
+    pt_output << std::endl; 
+  }
+  pt_output.close();
 }
 
 // Given a list of d-dimensional points,
@@ -439,6 +346,61 @@ p_vector find_initial_points(p_vector points){
   exit(-1);
 }
 
+// For each facet in the lcc, associate its appropriate attributes;
+// push a handle of each facet into the provided list
+void make_all_facets(dart_list* flist_ptr){
+  // Iterate over one dart of each of the dim-1-cells in the LCC
+  for(LCC::One_dart_per_cell_range<dim-1>::iterator it = lcc.one_dart_per_cell<dim-1>().begin(), itend = lcc.one_dart_per_cell<dim-1>().end(); it != itend; ++it){
+    p_vector vertices = get_cell_vertices(it);
+    Plane plane = Plane(vertices[0], vertices[1], vertices[2]); // TODO account for >3 vertices in face TODO adapt plane creation for dD
+
+    // If some other point in the simplex is on the positive side of the newly created plane, 
+    // reverse it so that it faces out
+    Point other = lcc.point(lcc.beta(lcc.beta(it, 2), 0)); // TODO will this work for higher dimensions? 
+    if(plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
+        plane = plane.opposite(); // TODO free/delete the old plane ? 
+    }
+
+    // Attributes: the supporting plane, an empty outside set, and 
+    // false to represent that the facet has not been processed and should not be deleted
+    lcc.info<dim-1>(it) = std::make_tuple(plane, new p_vector(), false);
+    (*flist_ptr).push_back(it);
+  }
+
+}
+
+// Given a pointer to a list of points and a pointer to a list of facets, 
+// sort the points into the outside sets of the facets
+void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr){
+  p_vector points = *plist_ptr;
+  dart_list facets = *flist_ptr; 
+  for(int i=0; i<points.size(); i++){
+    Point curr_point = points[i];
+    for(dart_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
+      if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
+          (*(outside_set(*it))).push_back(curr_point);
+          break;
+      }             
+    }
+  }
+}
+
+// Iterate through d's outside set in search of the point furthest from d's supporting plane
+// TODO: adapt to use distance function for point and plane in dD 
+Point get_furthest_point(Dart_handle d){
+  Point furthest_p = (*(outside_set(d)))[0]; 
+  double max_distance = Squared_distance()(furthest_p, (*(face_plane(d))));
+  for(int i=1; i<(*(outside_set(d))).size(); i++){
+    // For 4d will have to use my squared_distance and not the built-in one
+    double curr_distance = Squared_distance()((*(outside_set(d)))[i], (*(face_plane(d))));
+    if(curr_distance > max_distance){
+      max_distance = curr_distance;
+      furthest_p = (*(outside_set(d)))[i];
+    }
+  }
+  return furthest_p; 
+}
+
 p_vector get_cell_vertices(Dart_handle handle){
     p_vector p; 
     for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(handle).begin(), itend = lcc.darts_of_cell<dim-1>(handle).end(); 
@@ -463,10 +425,92 @@ p_vector get_ridge_vertices(Dart_handle handle){
   return p;
 }
 
-// Check if d1 and d2 are on ridges that match (have same length, same coords, opposite direction); if so, return the dart that 
-// corresponds to d1 in d2's ridge
-// This is arguably simpler in 3 and 4d because the ridges are lines and triangles, which have a pretty natural ordering
-// Right now returning d1 if there is no match TODO: make this nicer
+// Join point furthest_p to the ridges of the boundary list with a set of new facets; 
+// put a handle to each new facet in the new_facets list.
+// Note: leaves visible facets floating/unconnected
+// TODO: Is this where facets are floating off and getting lost?? 
+void make_facet_cone(dart_list* boundary_ptr, Point* furthest_p_ptr, dart_list* new_facets){
+  dart_list boundary = *boundary_ptr; 
+  Point furthest_p = *furthest_p_ptr; 
+  while (boundary.size() != 0){
+    Dart_handle curr = boundary.front();
+    boundary.pop_front(); 
+    // build new simplex with vertices = points of curr and furthest_p, making sure it is oriented so it can be linked
+    // Note: for shapes of higher dimension than triangles this may require more complex fiddling
+    p_vector ridge_points = get_ridge_vertices(curr);
+
+    Dart_handle new_facet = lcc.make_triangle(ridge_points[1], ridge_points[0], furthest_p);
+           
+    // Unlink from current (visible) facet and link to new facet along the boundary ridge
+    lcc.unsew<dim-1>(curr);
+    lcc.sew<dim-1>(curr, new_facet);
+
+    // Add to list of new facets for later linking
+    (*new_facets).push_back(new_facet);
+
+    // Find supporting plane 
+    // Any other point on the hull can be used to determine which way the plane should point (as it is convex)
+    // TODO: Fix this to work for dD, as in 4D it will give a dart that's still on the facet I think
+    p_vector vertices = get_cell_vertices(new_facet);
+    Plane new_facet_plane = Plane(vertices[0], vertices[1], vertices[2]);
+    Point other = lcc.point(lcc.beta(curr, 0));
+    if(new_facet_plane.oriented_side(other) != CGAL::ON_NEGATIVE_SIDE){
+      new_facet_plane = new_facet_plane.opposite(); // Remember to free this later
+    }
+
+    // Create & associate 2-attributes to new darts
+    for (LCC::Dart_of_cell_range<dim-1>::iterator
+      n=lcc.darts_of_cell<dim-1>(new_facet).begin(), n_end=lcc.darts_of_cell<dim-1>(new_facet).end();
+      n!=n_end; ++n)
+    {
+      if ( lcc.attribute<dim-1>(n)==NULL ){
+        lcc.set_attribute<dim-1>(n, lcc.create_attribute<dim-1>());
+      }
+    }
+
+    // Assign appropriate attributes (plane, empty outside set, not deleted yet)
+    lcc.info<dim-1>(new_facet) = std::make_tuple(new_facet_plane, new p_vector(), false); 
+  }
+}
+
+// Given a pointer to a list containing handles on facets, glue them together
+// where any two share a ridge with the same coordinates
+void glue_matching_facets(dart_list* facets){
+  // This loop iterates through pairs of facets 
+  for(dart_list::iterator it = (*facets).begin(), itend = (*facets).end(); it!=itend; ++it){
+    dart_list::iterator it2 = it; 
+    it2++; 
+    for(dart_list::iterator itend2 = (*facets).end(); it2!=itend2; ++it2){
+      bool match_found = false;
+      Dart_handle match1;
+      Dart_handle match2;
+
+      // Now, for each pair of facets, iterate through each pair of ridges
+      for(LCC::One_dart_per_incident_cell_range<dim-2,dim-1>::iterator r = lcc.one_dart_per_incident_cell<dim-2, dim-1>(*it).begin(), r_end = lcc.one_dart_per_incident_cell<dim-2,dim-1>(*it).end(); r!=r_end; ++r){
+        for(LCC::One_dart_per_incident_cell_range<dim-2,dim-1>::iterator r1 = lcc.one_dart_per_incident_cell<dim-2, dim-1>(*it2).begin(), r1_end = lcc.one_dart_per_incident_cell<dim-2,dim-1>(*it2).end(); r1!=r1_end; ++r1){
+          Dart_handle match = get_matching_dart(r, r1);
+          if(match != r){
+            match_found = true; 
+            match1 = r; 
+            match2 = match;
+            break;
+          }
+        }
+        if(match_found){
+          break;
+        }           
+      }
+
+      if(match_found){
+        lcc.sew<dim-1>(match1, match2);
+      }
+    }
+  }
+}
+
+// Given two dart_handles d1 and d2, check if they are on opposite ridges with matching coordinates, 
+// and if so, return the dart in d2's ridge that corresponds to d1 and can be sewn to it. 
+// If not, return d1. 
 Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2){
   if(dim==3){
     Point p1 = lcc.point(d1);
@@ -478,10 +522,12 @@ Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2){
   return d1; 
 }
 
+// Convenience function to grab the plane attribute of a facet
 Plane* face_plane(Dart_handle dh){
   return &(std::get<0>(lcc.info<dim-1>(dh)));
 }
 
+// Convenience function to grab the outside set attribute of a facet
 p_vector* outside_set(Dart_handle dh){
   return std::get<1>(lcc.info<dim-1>(dh));
 }
@@ -494,6 +540,9 @@ bool get_deleted(Dart_handle dh){
   return std::get<2>(lcc.info<dim-1>(dh));
 }
 
+// Writes the contents of the linear cell complex to a .off file
+// TODO: adapt for dD
+// TODO: fix bug so I'm not manually removing all the floating extra facets
 void write_off(){
   std::ofstream hull_output; 
   hull_output.open("hull_output.off");
@@ -506,29 +555,33 @@ void write_off(){
   string vertex = "";
   Point p; 
   for(LCC::One_dart_per_cell_range<0>::iterator it = lcc.one_dart_per_cell<0>().begin(), itend = lcc.one_dart_per_cell<0>().end(); it!=itend; ++it){
-    lcc.info<0>(it) = num_vertices;
-    p = lcc.point(it);
-    for(int i=0; i<dim; i++){
-      vertex = vertex + std::to_string(p[i]) + " ";
+    if(lcc.highest_nonfree_dimension(it) == 2){
+      lcc.info<0>(it) = num_vertices;
+      p = lcc.point(it);
+      for(int i=0; i<dim; i++){
+        vertex = vertex + std::to_string(p[i]) + " ";
+      }
+      vertices.push_back(vertex);
+      vertex = "";
+      num_vertices++; 
     }
-    vertices.push_back(vertex);
-    vertex = "";
-    num_vertices++;
   }
 
   int num_faces = 0;
   int vertices_of_face;
   string face = "";
   for(LCC::One_dart_per_cell_range<2>::iterator it = lcc.one_dart_per_cell<2>().begin(), itend = lcc.one_dart_per_cell<2>().end(); it!=itend; ++it){
-    num_faces++;
-    vertices_of_face = 0; 
-    for(LCC::Dart_of_cell_range<dim-1>::iterator it2 = lcc.darts_of_cell<dim-1>(it).begin(), itend2 = lcc.darts_of_cell<dim-1>(it).end(); 
-      it2 != itend2; ++it2){
-      vertices_of_face++; 
-      face = face + std::to_string(lcc.info<0>(it2)) + " "; 
+    if(lcc.highest_nonfree_dimension(it) == 2){
+      num_faces++;
+      vertices_of_face = 0; 
+      for(LCC::Dart_of_cell_range<dim-1>::iterator it2 = lcc.darts_of_cell<dim-1>(it).begin(), itend2 = lcc.darts_of_cell<dim-1>(it).end(); 
+        it2 != itend2; ++it2){
+        vertices_of_face++; 
+        face = face + std::to_string(lcc.info<0>(it2)) + " "; 
+      }
+      faces.push_back(std::to_string(vertices_of_face) + " " + face);
+      face = "";
     }
-    faces.push_back(std::to_string(vertices_of_face) + " " + face);
-    face = "";
   }
 
   hull_output << num_vertices << " " << num_faces << " 0\n";
@@ -543,3 +596,7 @@ void write_off(){
 
   hull_output.close();
 }
+
+
+
+
