@@ -8,15 +8,18 @@
 #include <CGAL/Cartesian_d.h>
 #include <CGAL/constructions_d.h>
 #include <CGAL/predicates_d.h>
-#include <CGAL/Cartesian.h>
+//#include <CGAL/Cartesian.h>
+#include <CGAL/Homogeneous.h>
 #include <CGAL/Linear_cell_complex_for_combinatorial_map.h>
 #include <CGAL/Linear_cell_complex_operations.h>
 #include <CGAL/enum.h>
+#include <CGAL/Gmpzf.h>
 
 const int dim = 3; 
 
 // Define kernel and its geometric objects
-typedef CGAL::Cartesian<double> K;
+typedef CGAL::Gmpzf Gmpzf;
+typedef CGAL::Homogeneous<Gmpzf> K;
 typedef CGAL::Vector_3<K> Vector;
 typedef CGAL::Segment_3<K> Segment;
 typedef CGAL::Plane_3<K> Plane;
@@ -58,12 +61,15 @@ typedef std::string string;
 // The LCC that is used for all of our operations
 LCC lcc; 
 
+// Global int used for writing repeated .off files because I am lazy
+int facets_processed; 
+
 // Function headers TODO: move these to a .h file
 void write_points(p_vector* plist_ptr);
 void quickhull(p_vector points);
 p_vector find_initial_points(p_vector points);
 void make_all_facets(dart_list* flist_ptr);
-void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr);
+void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr, bool ignore_point=false, Point point_to_ignore=Point(0,0,0));
 Point get_furthest_point(Dart_handle d);
 p_vector get_cell_vertices(Dart_handle d);
 p_vector get_ridge_vertices(Dart_handle d);
@@ -88,12 +94,12 @@ int main(){
   // points.push_back(Point(-5,1,1));
 
   // Generating uniformly distributed random points 
-  double lower_bound = -100;
-  double upper_bound = 100;
+  double lower_bound = -100000;
+  double upper_bound = 100000;
   std::uniform_real_distribution<double> unif(lower_bound,upper_bound);
   std::default_random_engine re;
-  for(int i=0; i<20; i++){
-    points.push_back(Point(unif(re), unif(re), unif(re)));
+  for(int i=0; i<100; i++){
+    points.push_back(Point(Gmpzf(unif(re)), Gmpzf(unif(re)), Gmpzf(unif(re))));
   }
 
   // Write points to a file for double checking with qhull
@@ -150,6 +156,8 @@ void quickhull(p_vector points){
   }
 
   // Iterate through list of facets to be processed until it is empty 
+  facets_processed = 0; 
+  write_off(); 
   while(facets.size() != 0){
 
     // PRINT info about current state of facets list 
@@ -171,6 +179,8 @@ void quickhull(p_vector points){
     if(get_deleted(curr_facet)){
       lcc.remove_cell<dim-1>(curr_facet);
       std::cout << "Removing previously processed facet!" << std::endl;
+      facets_processed++;
+      //write_off();
       continue; 
     }
 
@@ -235,25 +245,11 @@ void quickhull(p_vector points){
       std::cout << "Number of visible facets: " << visible.size() << std::endl; 
 
       // Resort outside sets of visible set
-      // iterate through facets in visible set
-      // TODO: use outside set function for this! 
+      // For each facet in visible set 
       for(dart_list::iterator v = visible.begin(), v_end = visible.end(); v != v_end; ++v){
         std::cout << "Processing visible facet:" << lcc.point(*v) << std::endl; 
-        // iterate through their outside set
-        p_vector v_outside = *(outside_set(*v));
-        for(p_vector::iterator p = v_outside.begin(), p_end = v_outside.end(); p!=p_end; ++p){
-          // for each point in outside set (that is not furthest_p, which we've processed)
-          Point curr_point = *p; 
-          if(curr_point != furthest_p){
-            // for each new facet
-            for(dart_list::iterator it = new_facets.begin(), it_end = new_facets.end(); it!=it_end; ++it){
-              if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
-                  (*(outside_set(*it))).push_back(curr_point);
-                  break;
-              }                
-            }
-          } 
-        }
+        // Pass furthest point as a point to ignore, as it has been processed and should not get re-sorted
+        sort_into_outside_sets(outside_set(*v), &new_facets, true, furthest_p);
         // Set boolean in all visible facets to false, so they will be deleted when they are processed later
         set_deleted(*v, true);   
       }
@@ -261,9 +257,13 @@ void quickhull(p_vector points){
       lcc.remove_cell<dim-1>(curr_facet);
       lcc.display_characteristics(std::cout);
     }
+
+    facets_processed++;
+    write_off();
+
   }
   // Export finished hull as .OFF file 
-  write_off();
+  //write_off();
 }
 
 void write_points(p_vector* plist_ptr){
@@ -273,7 +273,7 @@ void write_points(p_vector* plist_ptr){
   pt_output << (*plist_ptr).size() << std::endl; 
   for(int i=0; i<(*plist_ptr).size(); i++){
     for(int j=0; j<dim; j++){
-      pt_output << std::to_string(((*plist_ptr)[i])[j]) << " ";
+      pt_output << to_double((*plist_ptr)[i][j]) << " ";
     }
     pt_output << std::endl; 
   }
@@ -284,7 +284,7 @@ void write_points(p_vector* plist_ptr){
 // return d+1 linearly independent points, ideally extreme 
 p_vector find_initial_points(p_vector points){
   p_vector extremes;
-  double extreme_coordinates[2*dim];
+  CGAL::Quotient<Gmpzf> extreme_coordinates[2*dim];
   Point curr; 
   p_vector::iterator it = points.begin();
   for(int i=0; i<dim; i++){
@@ -371,16 +371,18 @@ void make_all_facets(dart_list* flist_ptr){
 
 // Given a pointer to a list of points and a pointer to a list of facets, 
 // sort the points into the outside sets of the facets
-void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr){
+void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr, bool ignore_point/*=false*/, Point point_to_ignore/*=Point(0,0,0)*/){
   p_vector points = *plist_ptr;
   dart_list facets = *flist_ptr; 
   for(int i=0; i<points.size(); i++){
     Point curr_point = points[i];
-    for(dart_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
-      if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
-          (*(outside_set(*it))).push_back(curr_point);
-          break;
-      }             
+    if(!ignore_point || (curr_point != point_to_ignore)){
+      for(dart_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
+        if((*face_plane(*it)).oriented_side(curr_point) == CGAL::ON_POSITIVE_SIDE){
+            (*(outside_set(*it))).push_back(curr_point);
+            break;
+        }             
+      }
     }
   }
 }
@@ -389,10 +391,10 @@ void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr){
 // TODO: adapt to use distance function for point and plane in dD 
 Point get_furthest_point(Dart_handle d){
   Point furthest_p = (*(outside_set(d)))[0]; 
-  double max_distance = Squared_distance()(furthest_p, (*(face_plane(d))));
+  CGAL::Quotient<Gmpzf> max_distance = Squared_distance()(furthest_p, (*(face_plane(d))));
   for(int i=1; i<(*(outside_set(d))).size(); i++){
     // For 4d will have to use my squared_distance and not the built-in one
-    double curr_distance = Squared_distance()((*(outside_set(d)))[i], (*(face_plane(d))));
+    CGAL::Quotient<Gmpzf> curr_distance = Squared_distance()((*(outside_set(d)))[i], (*(face_plane(d))));
     if(curr_distance > max_distance){
       max_distance = curr_distance;
       furthest_p = (*(outside_set(d)))[i];
@@ -545,24 +547,23 @@ bool get_deleted(Dart_handle dh){
 // TODO: fix bug so I'm not manually removing all the floating extra facets
 void write_off(){
   std::ofstream hull_output; 
-  hull_output.open("hull_output.off");
+  hull_output.open("hull_output.off"); /*+ std::to_string(facets_processed)*/
   hull_output << "OFF\n";
   
   std::list<string> vertices;
   std::list<string> faces;
 
   int num_vertices = 0;
-  string vertex = "";
   Point p; 
   for(LCC::One_dart_per_cell_range<0>::iterator it = lcc.one_dart_per_cell<0>().begin(), itend = lcc.one_dart_per_cell<0>().end(); it!=itend; ++it){
+    string vertex;
     if(lcc.highest_nonfree_dimension(it) == 2){
       lcc.info<0>(it) = num_vertices;
       p = lcc.point(it);
       for(int i=0; i<dim; i++){
-        vertex = vertex + std::to_string(p[i]) + " ";
+        vertex = vertex + std::to_string(to_double(p[i])) + " ";
       }
       vertices.push_back(vertex);
-      vertex = "";
       num_vertices++; 
     }
   }
