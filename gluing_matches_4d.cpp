@@ -51,6 +51,7 @@ typedef std::list<Dart_handle> dart_list;
 // String class used in writing file
 typedef std::string string;
 
+void make_simplex(int dim, p_vector* points_ptr);
 void glue_matching_facets(dart_list* facets);
 Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2);
 
@@ -58,7 +59,41 @@ Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2);
 LCC lcc; 
 
 int main(){
+  p_vector points; 
+  std::vector<Gmpzf> coords1 = {Gmpzf(0), Gmpzf(0), Gmpzf(0), Gmpzf(0)};
+  std::vector<Gmpzf> coords2 = {Gmpzf(0), Gmpzf(0), Gmpzf(0), Gmpzf(5)};
+  std::vector<Gmpzf> coords3 = {Gmpzf(0), Gmpzf(0), Gmpzf(5), Gmpzf(0)};
+  std::vector<Gmpzf> coords4 = {Gmpzf(0), Gmpzf(5), Gmpzf(0), Gmpzf(0)};
+  std::vector<Gmpzf> coords5 = {Gmpzf(5), Gmpzf(0), Gmpzf(0), Gmpzf(0)};
+  points.push_back(Point(4, coords1.begin(), coords1.end()));
+  points.push_back(Point(4, coords2.begin(), coords2.end()));
+  points.push_back(Point(4, coords3.begin(), coords3.end()));
+  points.push_back(Point(4, coords4.begin(), coords4.end()));
+  points.push_back(Point(4, coords5.begin(), coords5.end()));
+
+  make_simplex(dim, &points);
+
   exit(0);
+}
+
+void make_simplex(int dim, p_vector* points_ptr){
+  p_vector points = *points_ptr; 
+  if(dim==3){
+    lcc.make_tetrahedron(points[0], points[1], points[2], points[3]);
+  } else if (dim==4){
+    // Make a tetrahedron with each subset of four points, in matching orientations,
+    // then glue together
+    dart_list tetrahedra; 
+    tetrahedra.push_back(lcc.make_tetrahedron(points[0], points[1], points[2], points[4]));
+    tetrahedra.push_back(lcc.make_tetrahedron(points[1], points[0], points[3], points[4]));
+    tetrahedra.push_back(lcc.make_tetrahedron(points[3], points[0], points[2], points[4]));
+    tetrahedra.push_back(lcc.make_tetrahedron(points[1], points[0], points[2], points[3]));
+    lcc.display_characteristics(std::cout); 
+    std::cout << std::endl; 
+    glue_matching_facets(&tetrahedra);
+    lcc.display_characteristics(std::cout); 
+    std::cout << std::endl; 
+  }
 }
 
 // Given a pointer to a list containing handles on facets, glue them together
@@ -102,10 +137,19 @@ void glue_matching_facets(dart_list* facets){
 // If not, return d1. 
 Dart_handle get_matching_dart(Dart_handle d1, Dart_handle d2){
   if(dim==3){
+    // Looking for matching line segments
     Point p1 = lcc.point(d1);
     Point p2 = lcc.point(lcc.beta(d1, 1));
     if(lcc.point(d2) == p2 && lcc.point(lcc.beta(d2, 1)) == p1){
       return d2;
+    }
+  } else if (dim==4){
+    // Looking for matching triangles
+    for(int i=0; i<3; i++){
+      if(lcc.point(d1) == lcc.point(lcc.beta(d2, 1)) && lcc.point(lcc.beta(d1, 1)) == lcc.point(d2) && lcc.point(lcc.beta(d1, 0)) == lcc.point(lcc.beta(d2, 0))){
+        return d2; 
+      }  
+      d2 = lcc.beta(d2, 1);
     }
   }
   return d1; 
