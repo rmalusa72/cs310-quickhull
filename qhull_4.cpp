@@ -202,6 +202,14 @@ void quickhull(p_vector points){
     }
   }  
 
+  write_off();
+  for(LCC::One_dart_per_cell_range<3>::iterator it=lcc.one_dart_per_cell<3>().begin(), itend = lcc.one_dart_per_cell<3>().end(); it!=itend; ++it){
+    std::cout << "Handle: " << lcc.info<0>(it) << std::endl;
+    std::cout << "points to " << lcc.info<0>(lcc.beta(it, 1)) << std::endl;
+    std::cout << "points to " << lcc.info<0>(lcc.beta(lcc.beta(it, 1),1)) << std::endl;
+    std::cout << "handle cross: " << lcc.info<0>(lcc.beta(it, 2)) << "/" << lcc.info<0>(lcc.beta(lcc.beta(it,2),1)) << "/" << lcc.info<0>(lcc.beta(lcc.beta(lcc.beta(it,2),1),1)) << std::endl;
+  }
+
   // Initialize the list of facets to be processed with the newly created facets
   dart_list facets; 
   make_all_facets(&facets); 
@@ -269,7 +277,10 @@ void quickhull(p_vector points){
       }
       
       points_processed++;
-      
+
+      // TODO: only mark darts of ridge, not facet, when dart is considered and is not visible - 
+      // then boundary can be found on multiple ridges of that facet ! 
+
       std::cout << "BREADTH FIRST SEARCH:" << std::endl;
 
       dart_list visible; // Will contain a handle on each visible facet
@@ -277,8 +288,6 @@ void quickhull(p_vector points){
       dart_list boundary; // Will contain a handle on each ridge bordering the visible set
 
       to_visit.push_back(curr_facet);
-      visible.push_back(curr_facet);
-
       LCC::size_type m = lcc.get_new_mark(); 
 
       while(to_visit.size() != 0){
@@ -297,38 +306,37 @@ void quickhull(p_vector points){
         Dart_handle curr = to_visit.front();
         to_visit.pop_front();
         if(!lcc.is_marked(curr, m)){
-          // Mark darts of this cell visited
-          // & Grab adjacent darts
-          for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(curr).begin(), itend = lcc.darts_of_cell<dim-1>(curr).end(); it != itend; ++it){
-            lcc.mark(it, m);
-            
-            // Dart in adjacent cell to current dart
-            Dart_handle cross = lcc.beta(it, dim-1);
-            std::cout << "EXAMINING ACROSS DART:";
-            std::cout << lcc.info<0>(cross) << "->" << lcc.info<0>(lcc.beta(cross, 1)) << std::endl;
 
-            // If dart is marked - ignore
-            // If dart plane is visible - add facet to to_visit
-            // If dart plane is not visible - add this ridge to boundary
-            if (!(lcc.is_marked(cross, m))){
-              std::cout << "Cross' face is not marked - proceeding" << std::endl;
-              if((*(face_plane(cross))).oriented_side(furthest_p) == CGAL::ON_POSITIVE_SIDE || (*(face_plane(cross))).oriented_side(furthest_p) == CGAL::ON_ORIENTED_BOUNDARY){
-                std::cout << "Cross' plane is visible - push to visit and visible" << std::endl;
-                to_visit.push_back(cross);
-                visible.push_back(cross);
-              } else {
-                std::cout << "Cross' plane is not visible - push to boundary" << std::endl;
-                boundary.push_back(cross);
-              } // TODO: Account for coplanar case
+          // Check if furthest_p can see curr
+          if((*face_plane(curr)).oriented_side(furthest_p) == CGAL::ON_POSITIVE_SIDE || (*face_plane(curr)).oriented_side(furthest_p) == CGAL::ON_ORIENTED_BOUNDARY){
+            std::cout << "Adding to visible set & pushing neighbors to visit" << std::endl;
+            // If yes, push curr to visible set and add neighbors to to_visit
+            // This will add duplicates, but each will only be processed once due to marks (hopefully?)
+            // Mark every dart of facet visited
+            visible.push_back(curr);
+            for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(curr).begin(), itend = lcc.darts_of_cell<dim-1>(curr).end(); it != itend; ++it){
+              lcc.mark(it, m);
+              Dart_handle cross = lcc.beta(it, dim-1); 
+              to_visit.push_back(cross);
             }
-          }   
-        }     
+          } else {
+            std::cout << "Pushing to boundary" << std::endl;
+            boundary.push_back(curr);
+            // Mark every dart OF RIDGE visited
+            // (Multiple ridges of one facet might be on boundary)
+            for(LCC::Dart_of_cell_range<dim-2>::iterator it = lcc.darts_of_cell<dim-2>(curr).begin(), itend = lcc.darts_of_cell<dim-2>(curr).end(); it != itend; ++it){
+              lcc.mark(it, m);
+            }            
+          }
+        } else { 
+          std::cout << "dart is already marked" << std::endl; 
+        }    
       }
       lcc.free_mark(m);
 
       std::cout << "boundary:\n";
       for(dart_list::iterator b = boundary.begin(), b_end = boundary.end(); b!=b_end; ++b){
-        std::cout << lcc.info<0>(*b) << "->" << lcc.info<0>(lcc.beta(*b, 1)) << std::endl; 
+        std::cout << lcc.info<0>(*b) << "->" << lcc.info<0>(lcc.beta(*b, 1)) << "(->" << lcc.info<0>(lcc.beta(lcc.beta(*b, 1),1)) << ")" << std::endl; 
       }
 
       // Join new point to boundary with new facets
@@ -460,6 +468,7 @@ void make_simplex(int dim, p_vector* points_ptr){
     tetrahedra.push_back(lcc.make_tetrahedron(points[1], points[0], points[3], points[4]));
     tetrahedra.push_back(lcc.make_tetrahedron(points[3], points[0], points[2], points[4]));
     tetrahedra.push_back(lcc.make_tetrahedron(points[1], points[0], points[2], points[3]));
+    tetrahedra.push_back(lcc.make_tetrahedron(points[1], points[2], points[4], points[3]));
     glue_matching_facets(&tetrahedra);
   }
 }
@@ -534,7 +543,9 @@ p_vector get_cell_vertices(Dart_handle handle){
     p_vector p; 
     for(LCC::Dart_of_cell_range<dim-1>::iterator it = lcc.darts_of_cell<dim-1>(handle).begin(), itend = lcc.darts_of_cell<dim-1>(handle).end(); 
         it != itend; ++it){
-        p.push_back(lcc.point(it));
+        if(std::find(p.begin(), p.end(), lcc.point(it)) == p.end()){
+          p.push_back(lcc.point(it));         
+        }
     }   
     return p; 
 }
@@ -548,7 +559,9 @@ p_vector get_ridge_vertices(Dart_handle handle){
   } else if (dim > 3){
     for(LCC::Dart_of_cell_range<dim-2>::iterator it = lcc.darts_of_cell<dim-2>(handle).begin(), itend = lcc.darts_of_cell<dim-2>(handle).end(); 
         it != itend; ++it){
-        p.push_back(lcc.point(it));
+      if(std::find(p.begin(), p.end(), lcc.point(it)) == p.end()){
+        p.push_back(lcc.point(it));         
+      }
     }       
   }
   return p;
@@ -583,7 +596,12 @@ void make_facet_cone(dart_list* boundary_ptr, Point* furthest_p_ptr, dart_list* 
     // Find supporting plane 
     // Any other point on the hull can be used to determine which way the plane should point (as it is convex)
     p_vector vertices = get_cell_vertices(new_facet);
-    Point other = lcc.point(lcc.beta(lcc.beta(lcc.beta(curr, dim-1),dim-2),0));
+    Point other = lcc.point(lcc.beta(lcc.beta(lcc.beta(new_facet, dim-1),dim-2),0));
+    std::cout << "vertices:";
+    for(p_vector::iterator v = vertices.begin(), v_end = vertices.end(); v!=v_end; ++v){
+      std::cout << *v << "/";
+    } 
+    std::cout << "\n" << "other:" << other;
     Plane new_facet_plane = Plane(vertices.begin(), vertices.end(), other, CGAL::ON_NEGATIVE_SIDE);
 
     // Create & associate dim-1-attributes to new darts
