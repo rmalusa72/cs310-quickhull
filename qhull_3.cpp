@@ -58,10 +58,6 @@ typedef std::string string;
 // The LCC that is used for all of our operations
 LCC lcc; 
 
-// Global int used for writing repeated .off files because I am lazy
-int facets_processed; 
-int points_processed;
-
 // Function headers TODO: move these to a .h file
 void write_points(p_vector* plist_ptr);
 void quickhull(p_vector points);
@@ -172,7 +168,6 @@ int main(int argc, char *argv[]){
   // The quickhull function constructs the hull in lcc
   // and writes the polytope to the hull_output.off file
   quickhull(points);
-  std::cout << "Points processed: " << points_processed << std::endl;
 }
 
 // Given a set of d-dimensional points, this function constructs their convex hull
@@ -183,11 +178,6 @@ void quickhull(p_vector points){
   p_vector initial_points = find_initial_points(points);
   // Construct simplex TODO: adapt for higher dimension
   lcc.make_tetrahedron(initial_points[0], initial_points[1], initial_points[2], initial_points[3]);
-
-  // PRINT each point of the initial set 
-  for(int i=0; i<initial_points.size(); i++){
-    std::cout << initial_points[i] << std::endl;
-  }
 
   // Associate a new dim-1-attribute to each dart
   for (LCC::Dart_range::iterator
@@ -214,28 +204,9 @@ void quickhull(p_vector points){
   // Sort the remaining points into outside sets 
   sort_into_outside_sets(&remaining_points, &facets);
 
-  // PRINT info on facets
-  for(dart_list::iterator it = facets.begin(), itend = facets.end(); it!=itend; ++it){
-    std::cout << (*(outside_set(*it))).size() << std::endl; 
-    std::cout << (*(face_plane(*it))) << std::endl; 
-  }
-
   // Iterate through list of facets to be processed until it is empty 
-  facets_processed = 0; 
-  points_processed = 4;
   write_off(); 
   while(facets.size() != 0){
-
-    // PRINT info about current state of facets list 
-    std::cout << "Num facets in list: " << facets.size() << std::endl;
-    for(dart_list::iterator f = facets.begin(), fend = facets.end(); f!=fend; ++f){
-      std::cout << "Facet handle: " << lcc.point(*f) << "/" << lcc.point(lcc.beta(*f, 1)) << "/" << lcc.point(lcc.beta(lcc.beta(*f, 1), 1))  << std::endl;
-      std::cout << "To be deleted: " << get_deleted(*f) << std::endl; 
-      std::cout << "Outside set size: " << (*(outside_set(*f))).size() << std::endl;
-    }
-    lcc.display_characteristics(std::cout);
-    std::cout << std::endl; 
-
     // Pop first handle from facets list 
     Dart_handle curr_facet = facets.front();
     facets.pop_front();
@@ -244,16 +215,8 @@ void quickhull(p_vector points){
     // If so, its boolean get_deleted attribute will be true 
     if(get_deleted(curr_facet)){
       lcc.remove_cell<dim-1>(curr_facet);
-      std::cout << "Removing previously processed facet!" << std::endl;
-      facets_processed++;
       write_off();
       continue; 
-    }
-
-    // PRINT information about this facet's outside set 
-    std::cout << "outside list size: " << (*(outside_set(curr_facet))).size() << std::endl;
-    for(int i=0; i<(*(outside_set(curr_facet))).size(); i++){
-      std::cout << i << ": " <<  (*(outside_set(curr_facet)))[i] << std::endl; 
     }
 
     // If facet has points in outside set, execute quickhull step 
@@ -264,10 +227,6 @@ void quickhull(p_vector points){
       } else {
         furthest_p = get_first_point(curr_facet);
       }
-      
-      points_processed++;
-      
-      std::cout << "BREADTH FIRST SEARCH:" << std::endl;
 
       dart_list visible; // Will contain a handle on each visible facet
       dart_list to_visit; // Used for breadth-first search
@@ -279,17 +238,6 @@ void quickhull(p_vector points){
       LCC::size_type m = lcc.get_new_mark(); 
 
       while(to_visit.size() != 0){
-
-        std::cout << "VISIBLE:";
-        for(dart_list::iterator vis = visible.begin(), vis_end = visible.end(); vis!=vis_end; ++vis){
-          std::cout << lcc.info<0>(*vis) << "->" << lcc.info<0>(lcc.beta(*vis, 1)) << "->" << lcc.info<0>(lcc.beta(lcc.beta(*vis, 1),1)) << std::endl;
-        }
-
-        std::cout << "TO_VISIT:";
-        for(dart_list::iterator tvis = to_visit.begin(), tvis_end = to_visit.end(); tvis!=tvis_end; ++tvis){
-          std::cout << lcc.info<0>(*tvis) << "->" << lcc.info<0>(lcc.beta(*tvis, 1)) << "->" << lcc.info<0>(lcc.beta(lcc.beta(*tvis, 1),1)) << std::endl;
-        }
-
         // Pop next dart 
         Dart_handle curr = to_visit.front();
         to_visit.pop_front();
@@ -301,20 +249,15 @@ void quickhull(p_vector points){
             
             // Dart in adjacent cell to current dart
             Dart_handle cross = lcc.beta(it, dim-1);
-            std::cout << "EXAMINING ACROSS DART:";
-            std::cout << lcc.info<0>(cross) << "->" << lcc.info<0>(lcc.beta(cross, 1)) << std::endl;
 
             // If dart is marked - ignore
             // If dart plane is visible - add facet to to_visit
             // If dart plane is not visible - add this ridge to boundary
             if (!(lcc.is_marked(cross, m))){
-              std::cout << "Cross' face is not marked - proceeding" << std::endl;
               if((*(face_plane(cross))).oriented_side(furthest_p) == CGAL::ON_POSITIVE_SIDE || (*(face_plane(cross))).oriented_side(furthest_p) == CGAL::ON_ORIENTED_BOUNDARY){
-                std::cout << "Cross' plane is visible - push to visit and visible" << std::endl;
                 to_visit.push_back(cross);
                 visible.push_back(cross);
               } else {
-                std::cout << "Cross' plane is not visible - push to boundary" << std::endl;
                 boundary.push_back(cross);
               } // TODO: Account for coplanar case
             }
@@ -322,11 +265,6 @@ void quickhull(p_vector points){
         }     
       }
       lcc.free_mark(m);
-
-      std::cout << "boundary:\n";
-      for(dart_list::iterator b = boundary.begin(), b_end = boundary.end(); b!=b_end; ++b){
-        std::cout << lcc.info<0>(*b) << "->" << lcc.info<0>(lcc.beta(*b, 1)) << std::endl; 
-      }
 
       // Join new point to boundary with new facets
       dart_list new_facets;
@@ -337,18 +275,12 @@ void quickhull(p_vector points){
         facets.push_back(*nf);
       }
 
-      std::cout << "Number of visible facets: " << visible.size() << std::endl; 
-      for(dart_list::iterator v = visible.begin(), v_end = visible.end(); v!=v_end; ++v){
-        std::cout << lcc.info<0>(*v) << "->" << lcc.info<0>(lcc.beta(*v, 1)) << "->" << lcc.info<0>(lcc.beta(lcc.beta(*v, 1),1)) << std::endl; 
-      }
-
       // Glue together new facets along matching edges
       glue_matching_facets(&new_facets);
 
       // Resort outside sets of visible set
       // For each facet in visible set 
       for(dart_list::iterator v = visible.begin(), v_end = visible.end(); v != v_end; ++v){
-        std::cout << "Processing visible facet:" << lcc.point(*v) << std::endl; 
         // Pass furthest point as a point to ignore, as it has been processed and should not get re-sorted
         sort_into_outside_sets(outside_set(*v), &new_facets, true, furthest_p);
         // Set boolean in all visible facets to false, so they will be deleted when they are processed later
@@ -356,15 +288,10 @@ void quickhull(p_vector points){
       }
       // Remove the facet we are processing directly, since it will not get re-added and processed
       lcc.remove_cell<dim-1>(curr_facet);
-      lcc.display_characteristics(std::cout);
     }
-
-    facets_processed++;
-    write_off();
-
   }
   // Export finished hull as .OFF file 
-  //write_off();
+  write_off();
 }
 
 void write_points(p_vector* plist_ptr){
@@ -552,10 +479,7 @@ void make_facet_cone(dart_list* boundary_ptr, Point* furthest_p_ptr, dart_list* 
     Dart_handle new_facet = lcc.make_triangle(ridge_points[1], ridge_points[0], furthest_p);
            
     // Unlink from current (visible) facet and link to new facet along the boundary ridge
-    // PRINT info about darts we are trying to sew
-    
     lcc.unsew<dim-1>(curr);
-    std::cout << "Sewing new facet in" << std::endl;
     lcc.sew<dim-1>(curr, new_facet);
 
     // Add to list of new facets for later linking
@@ -615,7 +539,6 @@ void glue_matching_facets(dart_list* facets){
       }
 
       if(match_found){
-        std::cout << "Sewing new facets together" << std::endl;
         lcc.sew<dim-1>(match1, match2);
       }
     }
@@ -658,7 +581,7 @@ bool get_deleted(Dart_handle dh){
 // TODO: adapt for dD
 void write_off(){
   std::ofstream hull_output; 
-  hull_output.open("hull_output_" + std::to_string(facets_processed) + ".off"); /*+ std::to_string(facets_processed)*/
+  hull_output.open("hull_output.off"); /*+ std::to_string(facets_processed)*/
   hull_output << "OFF\n";
   
   std::list<string> vertices;
@@ -683,7 +606,6 @@ void write_off(){
   int vertices_of_face;
   string face = "";
   for(LCC::One_dart_per_cell_range<dim-1>::iterator it = lcc.one_dart_per_cell<dim-1>().begin(), itend = lcc.one_dart_per_cell<dim-1>().end(); it!=itend; ++it){
-    std::cout << "face 2-free status:" << std::endl;
     if(!get_deleted(it)){
       num_faces++;
       vertices_of_face = 0; 
@@ -691,9 +613,7 @@ void write_off(){
         it2 != itend2; ++it2){
         vertices_of_face++; 
         face = face + std::to_string(lcc.info<0>(it2)) + " "; 
-        std::cout << lcc.highest_nonfree_dimension(it2) << "/";
       }
-      std::cout << std::endl; 
       faces.push_back(std::to_string(vertices_of_face) + " " + face);
       face = "";
     }
