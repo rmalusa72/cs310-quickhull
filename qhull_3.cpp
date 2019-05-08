@@ -12,6 +12,7 @@
 #include <CGAL/Gmpzf.h>
 
 const int dim = 3; 
+bool select_furthest = true;
 
 // Define kernel and its geometric objects
 typedef CGAL::Gmpzf Gmpzf;
@@ -60,6 +61,7 @@ LCC lcc;
 
 // Global int used for writing repeated .off files because I am lazy
 int facets_processed; 
+int points_processed;
 
 // Function headers TODO: move these to a .h file
 void write_points(p_vector* plist_ptr);
@@ -68,6 +70,7 @@ p_vector find_initial_points(p_vector points);
 void make_all_facets(dart_list* flist_ptr);
 void sort_into_outside_sets(p_vector* plist_ptr, dart_list* flist_ptr, bool ignore_point=false, Point point_to_ignore=Point(0,0,0));
 Point get_furthest_point(Dart_handle d);
+Point get_first_point(Dart_handle d);
 p_vector get_cell_vertices(Dart_handle d);
 p_vector get_ridge_vertices(Dart_handle d);
 void make_facet_cone(dart_list* boundary_ptr, Point* furthest_p_ptr, dart_list* new_facets);
@@ -81,6 +84,7 @@ void write_off();
 
 // Load points into a vector, and call quickhull on it
 int main(int argc, char *argv[]){
+
   p_vector points;
 
   if(argc == 1){
@@ -115,14 +119,15 @@ int main(int argc, char *argv[]){
     // Load points with uniformly distributed points
     double lower_bound = -100;
     double upper_bound = 100;
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::uniform_real_distribution<double> unif(lower_bound,upper_bound);
-    std::default_random_engine re;
+    std::default_random_engine re(seed);
     for(int i=0; i<n; i++){
       points.push_back(Point(Gmpzf(unif(re)), Gmpzf(unif(re)), Gmpzf(unif(re))));
     }
   } else if(argv[1][0] == 'f'){
     // Read points from a file
-    if(argc >= 2){
+    if(argc == 2){
       std::cout << "Please provide a file path as an argument" << std::endl;
       exit(0);
     } 
@@ -168,6 +173,7 @@ int main(int argc, char *argv[]){
   // The quickhull function constructs the hull in lcc
   // and writes the polytope to the hull_output.off file
   quickhull(points);
+  std::cout << "Points processed: " << points_processed << std::endl;
 }
 
 // Given a set of d-dimensional points, this function constructs their convex hull
@@ -217,6 +223,7 @@ void quickhull(p_vector points){
 
   // Iterate through list of facets to be processed until it is empty 
   facets_processed = 0; 
+  points_processed = 4;
   write_off(); 
   while(facets.size() != 0){
 
@@ -252,7 +259,14 @@ void quickhull(p_vector points){
 
     // If facet has points in outside set, execute quickhull step 
     if ((*(outside_set(curr_facet))).size() != 0){
-      Point furthest_p = get_furthest_point(curr_facet);
+      Point furthest_p;
+      if(select_furthest){
+        furthest_p = get_furthest_point(curr_facet);
+      } else {
+        furthest_p = get_first_point(curr_facet);
+      }
+      
+      points_processed++;
       
       std::cout << "BREADTH FIRST SEARCH:" << std::endl;
 
@@ -491,6 +505,12 @@ Point get_furthest_point(Dart_handle d){
     }
   }
   return furthest_p; 
+}
+
+// Return the first point in d's outside set
+// (Alternate selection step)
+Point get_first_point(Dart_handle d){
+  return (*(outside_set(d)))[0];
 }
 
 p_vector get_cell_vertices(Dart_handle handle){
