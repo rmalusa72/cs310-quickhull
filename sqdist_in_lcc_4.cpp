@@ -48,6 +48,8 @@ typedef CGAL::Linear_cell_complex_for_combinatorial_map<dim, dim, CGAL::Linear_c
 typedef LCC::Dart_handle                                 Dart_handle;
 typedef std::list<Dart_handle> dart_list;
 
+double squared_distance(Point y1, Point q, Plane* plane_ptr);
+
 // String class used in writing file
 typedef std::string string;
 
@@ -84,6 +86,7 @@ int main(){
   // Finding closest point to an arbitrary point y
   double ycoords[4] = {20, 30, 40, 50};
   Vector y = Vector(4, ycoords, &ycoords[4]);
+  Point y1 = Point(4, ycoords, &ycoords[4]);
 
   // p is a point on the hyperplane, but we want it as a vector
   Vector p = a1 - o;
@@ -96,6 +99,21 @@ int main(){
   std::cout << to_double(d) << std::endl;
 
   // distance = y dot a - d / |a|
-  double squared_distance = to_double(pow(to_double(y*a-d), 2.0)/a.squared_length());
-  std::cout << squared_distance << std::endl;
+  //double squared_distance = to_double(pow(to_double(y*a-d), 2.0)/a.squared_length());
+  //std::cout << squared_distance << std::endl;
+
+  std::cout << "dist:" << std::to_string(squared_distance(y1, a1, &plane)) << std::endl; 
+}
+
+// Given a point y, a point q, and a hyperplane that q is on, 
+// find the square of the distance from y to the hyperplane 
+double squared_distance(Point y1, Point q, Plane* plane_ptr){
+  std::vector<double> origin = {0,0,0,0};
+  Point o = Point(4, origin.begin(), origin.end());
+
+  Vector a = (*plane_ptr).orthogonal_vector();
+  Vector p = q - o;
+  Vector y = y1 - o;
+  CGAL::Quotient<double> d = p*a;
+  return(to_double(pow(to_double(y*a-d), 2.0)/a.squared_length()));
 }
