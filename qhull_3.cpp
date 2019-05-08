@@ -25,7 +25,6 @@ typedef CGAL::Point_3<K> Point;
 
 // Define functions from kernel
 typedef K::Compute_squared_distance_3 Squared_distance;
-typedef K::Orientation_3 Orientation;
 typedef K::Coplanar_3 not_independent;
 
 // Define vector of points for use in attributes
