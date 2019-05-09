@@ -76,6 +76,7 @@ p_vector* outside_set(Dart_handle dh);
 void set_deleted(Dart_handle dh, bool val); 
 bool get_deleted(Dart_handle dh);
 void write_off();
+void write_cube_markers_off(p_vector* plist_ptr);
 
 // Load points into a vector, and call quickhull on it
 int main(int argc, char *argv[]){
@@ -195,6 +196,7 @@ int main(int argc, char *argv[]){
 
   // The quickhull function constructs the hull in lcc
   // and writes the polytope to the hull_output.off file
+  write_cube_markers_off(&points);
   quickhull(points);
 }
 
@@ -686,5 +688,69 @@ void write_off(){
   hull_output.close();
 }
 
+// Writes a hypercube (hyperrectangular prism?) around each point that extends along the x axis
+void write_cube_markers_off(p_vector* plist_ptr){
+  std::ofstream hull_output; 
+  hull_output.open("hypercubes.off"); /*+ std::to_string(facets_processed)*/
+  hull_output << "nOFF\n4\n";
+  p_vector points = *plist_ptr;
+  hull_output << (points.size()*16) << " " << (points.size()*24) << " 0" << std::endl;
+  for(int i=0; i<points.size(); i++){
+    
+    Point p1 = points[i];
+    std::vector<double> p;
+    for(int j=0; j<dim; j++){
+      p.push_back(to_double(p1[j]));
+    }
 
+    hull_output << p[0]+10 << " " << p[1] << " " << p[2] << " " << p[3] << std::endl; 
+    hull_output << p[0]+10 << " " << p[1] + 5 << " " << p[2] << " " << p[3] << std::endl; 
+    hull_output << p[0]+10 << " " << p[1] << " " << p[2]+5 << " " << p[3] << std::endl; 
+    hull_output << p[0]+10 << " " << p[1] << " " << p[2] << " " << p[3]+5 << std::endl; 
+
+    hull_output << p[0]+10 << " " << p[1] << " " << p[2]+5 << " " << p[3]+5 << std::endl; 
+    hull_output << p[0]+10 << " " << p[1] + 5 << " " << p[2] << " " << p[3]+5 << std::endl; 
+    hull_output << p[0]+10 << " " << p[1]+5 << " " << p[2]+5 << " " << p[3] << std::endl; 
+    hull_output << p[0]+10 << " " << p[1] + 5 << " " << p[2]+5 << " " << p[3]+5 << std::endl; 
+    
+    hull_output << p[0]-10 << " " << p[1] << " " << p[2] << " " << p[3] << std::endl; 
+    hull_output << p[0]-10 << " " << p[1] + 5 << " " << p[2] << " " << p[3] << std::endl; 
+    hull_output << p[0]-10 << " " << p[1] << " " << p[2]+5 << " " << p[3] << std::endl; 
+    hull_output << p[0]-10 << " " << p[1] << " " << p[2] << " " << p[3]+5 << std::endl; 
+
+    hull_output << p[0]-10 << " " << p[1] << " " << p[2]+5 << " " << p[3]+5 << std::endl; 
+    hull_output << p[0]-10 << " " << p[1] + 5 << " " << p[2] << " " << p[3]+5 << std::endl; 
+    hull_output << p[0]-10 << " " << p[1]+5 << " " << p[2]+5 << " " << p[3] << std::endl; 
+    hull_output << p[0]-10 << " " << p[1] + 5 << " " << p[2]+5 << " " << p[3]+5 << std::endl; 
+  }
+
+  for(int i=0; i<(16*points.size()); i+=16){
+    hull_output << "4" << " " << i << " " << i+1 << " " << i+2 << " " << i+3 << std::endl; 
+    hull_output << "4" << " " << i << " " << i+4 << " " << i+5 << " " << i+1 << std::endl; 
+    hull_output << "4" << " " << i << " " << i+8 << " " << i+9 << " " << i+1 << std::endl; 
+    hull_output << "4" << " " << i+1 << " " << i+2 << " " << i+10 << " " << i+9 << std::endl; 
+    hull_output << "4" << " " << i+1 << " " << i+2 << " " << i+6 << " " << i+5 << std::endl; 
+    hull_output << "4" << " " << i << " " << i+3 << " " << i+7 << " " << i+4 << std::endl; 
+    hull_output << "4" << " " << i << " " << i+3 << " " << i+11 << " " << i+8 << std::endl; 
+    hull_output << "4" << " " << i+3 << " " << i+11 << " " << i+10 << " " << i+2 << std::endl; 
+    hull_output << "4" << " " << i+2 << " " << i+3 << " " << i+7 << " " << i+6 << std::endl; 
+    hull_output << "4" << " " << i+2 << " " << i+6 << " " << i+14 << " " << i+10 << std::endl;
+    hull_output << "4" << " " << i+7 << " " << i+15 << " " << i+14 << " " << i+6 << std::endl; 
+    hull_output << "4" << " " << i+7 << " " << i+6 << " " << i+5 << " " << i+4 << std::endl; 
+    hull_output << "4" << " " << i+7 << " " << i+3 << " " << i+11 << " " << i+15 << std::endl;  
+    hull_output << "4" << " " << i+7 << " " << i+4 << " " << i+12 << " " << i+15 << std::endl; 
+    hull_output << "4" << " " << i << " " << i+4 << " " << i+8 << " " << i+12 << std::endl;
+    hull_output << "4" << " " << i+4 << " " << i+12 << " " << i+5 << " " << i+13 << std::endl;
+    hull_output << "4" << " " << i+1 << " " << i+9 << " " << i+3 << " " << i+5 << std::endl;
+    hull_output << "4" << " " << i+5 << " " << i+6 << " " << i+14 << " " << i+13 << std::endl;
+    hull_output << "4" << " " << i+8 << " " << i+9 << " " << i+10 << " " << i+11 << std::endl;
+    hull_output << "4" << " " << i+12 << " " << i+13 << " " << i+14 << " " << i+15 << std::endl;
+    hull_output << "4" << " " << i+8 << " " << i+11 << " " << i+15 << " " << i+12 << std::endl;
+    hull_output << "4" << " " << i+9 << " " << i+13 << " " << i+14 << " " << i+10 << std::endl;
+    hull_output << "4" << " " << i+8 << " " << i+9 << " " << i+13 << " " << i+12 << std::endl;
+    hull_output << "4" << " " << i+10 << " " << i+11 << " " << i+15 << " " << i+14 << std::endl;
+  }
+  hull_output << std::endl; 
+  hull_output.close();
+}
 
