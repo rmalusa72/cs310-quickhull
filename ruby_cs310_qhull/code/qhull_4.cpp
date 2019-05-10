@@ -245,6 +245,7 @@ void quickhull(p_vector points){
     // Facet may be a remnant that has already been processed as part of a visible set
     // If so, its boolean get_deleted attribute will be true 
     if(get_deleted(curr_facet)){
+      delete outside_set(curr_facet);
       lcc.remove_cell<dim-1>(curr_facet);
       continue; 
     }
@@ -316,6 +317,7 @@ void quickhull(p_vector points){
         set_deleted(*v, true);   
       }
       // Remove the facet we are processing directly, since it will not get re-added and processed
+      delete outside_set(curr_facet);
       lcc.remove_cell<dim-1>(curr_facet);
     }
   }
